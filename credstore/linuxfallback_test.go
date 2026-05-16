@@ -29,6 +29,12 @@ func TestClassifySecretServiceErr(t *testing.T) {
 		{"bare ENOENT is NOT unavailable", errors.New("open /run/user/1000/bus: no such file or directory"), ssAmbiguous},
 		{"opaque error is ambiguous", errors.New("totally opaque"), ssAmbiguous},
 		{"wrapped typed error still classified", fmt.Errorf("probe failed: %w", &dbus.Error{Name: "org.freedesktop.Secret.Error.IsLocked"}), ssDenied},
+		// godbus returns dbus.Error by value at real call sites, so the
+		// value-type errors.As branch must classify too (not only the
+		// *dbus.Error pointer form).
+		{"value dbus.Error unavailable", dbus.Error{Name: "org.freedesktop.DBus.Error.ServiceUnknown"}, ssUnavailable},
+		{"value dbus.Error denied", dbus.Error{Name: "org.freedesktop.Secret.Error.IsLocked"}, ssDenied},
+		{"wrapped value dbus.Error", fmt.Errorf("probe: %w", dbus.Error{Name: "org.freedesktop.DBus.Error.NameHasNoOwner"}), ssUnavailable},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -190,6 +196,16 @@ func TestOpenWithDepsLinuxAutoFallback(t *testing.T) {
 			return &dbus.Error{Name: "org.freedesktop.Secret.Error.IsLocked"}
 		}
 		_, err := openWithDeps(svc, &Options{}, envFrom(nil), "linux", denied)
+		if !errors.Is(err, ErrSecretServiceFailClosed) {
+			t.Fatalf("err = %v, want ErrSecretServiceFailClosed", err)
+		}
+	})
+
+	t.Run("ambiguous → fail closed through Open", func(t *testing.T) {
+		ambiguous := func(string, func(string) string) error {
+			return errors.New("opaque probe failure")
+		}
+		_, err := openWithDeps(svc, &Options{}, envFrom(nil), "linux", ambiguous)
 		if !errors.Is(err, ErrSecretServiceFailClosed) {
 			t.Fatalf("err = %v, want ErrSecretServiceFailClosed", err)
 		}
