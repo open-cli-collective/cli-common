@@ -27,6 +27,20 @@ func TestRedactBasic(t *testing.T) {
 	if got := zero.Redact("zero value"); got != "zero value" {
 		t.Fatalf("zero-value Redactor = %q", got)
 	}
+	// Loaded secret absent from input → passthrough (no spans).
+	if got := NewRedactor("absent").Redact("nothing to see"); got != "nothing to see" {
+		t.Fatalf("secret-absent passthrough = %q", got)
+	}
+	// Empty input → empty out (early return).
+	if got := NewRedactor("x").Redact(""); got != "" {
+		t.Fatalf("empty input = %q", got)
+	}
+	// Single-byte secret: one-byte scan advance + loop termination.
+	// "z" is chosen so it does not collide with the placeholder literal
+	// (which contains the letters of "redacted"/"len").
+	if got := NewRedactor("z").Redact("zbzbz"); got != "<redacted, len=1>b<redacted, len=1>b<redacted, len=1>" {
+		t.Fatalf("single-byte secret = %q", got)
+	}
 }
 
 func TestRedactLenIsOriginalSecretLength(t *testing.T) {
@@ -175,6 +189,20 @@ func TestRedactHeaders(t *testing.T) {
 
 	r.RedactHeaders(nil) // no panic
 
+	// Always-set path: the header value is itself a loaded secret. It is
+	// replaced wholesale with the length-only placeholder and the secret
+	// must not survive.
+	rs := NewRedactor("xoxb-real-bot-token")
+	const authVal = "Bearer xoxb-real-bot-token"
+	hs := http.Header{"Authorization": {authVal}}
+	rs.RedactHeaders(hs)
+	if want := redactedPlaceholder(len(authVal)); hs.Get("Authorization") != want {
+		t.Fatalf("always-set value-is-secret = %q, want %q", hs.Get("Authorization"), want)
+	}
+	if err := NoLeakAssertion([]byte(strings.Join(hs["Authorization"], "")), "xoxb-real-bot-token"); err != nil {
+		t.Fatalf("always-set header leaked the secret value: %v", err)
+	}
+
 	// Always-set placeholder must also fail closed when a secret collides
 	// with the placeholder literal (e.g. secret "redacted").
 	rc := NewRedactor("redacted")
@@ -221,6 +249,14 @@ func TestRedactWriter(t *testing.T) {
 	if n != 0 || !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("short write = (%d,%v), want (0, io.ErrShortWrite)", n, err)
 	}
+
+	// No secrets loaded → pure passthrough, full byte count.
+	var pb strings.Builder
+	in2 := []byte("nothing to redact here")
+	n, err = NewRedactor().RedactWriter(&pb).Write(in2)
+	if err != nil || n != len(in2) || pb.String() != string(in2) {
+		t.Fatalf("no-secret writer = (%d,%v,%q)", n, err, pb.String())
+	}
 }
 
 func TestRedactWriterCrossWriteSplitIsKnownGap(t *testing.T) {
@@ -262,16 +298,43 @@ func TestNoLeakAssertion(t *testing.T) {
 		t.Fatalf("aggregate = %v", err)
 	}
 
-	// The error string is itself fail-closed: short / placeholder-shaped
-	// secrets must not appear in the message either. Error stays non-nil.
-	for _, sec := range []string{"len", "1", "secret", "credstore"} {
-		e := NoLeakAssertion([]byte("here is "+sec+" leaking"), sec)
+	// The error string is itself fail-closed. Assert the *specific*
+	// degraded form so each branch of safeErrorText is pinned, not just
+	// "value absent" (which passes vacuously for the empty fallback).
+	const generic = "credstore: a loaded value leaked into output (details withheld to avoid echoing it)"
+	for _, tc := range []struct {
+		sec  string
+		want string // exact expected Error() text
+	}{
+		{"len", generic},    // detailed has "len" → generic (generic has no "len")
+		{"1", generic},      // detailed has "1"  → generic (generic has no digits)
+		{"secret", generic}, // detailed has "secret" → generic (generic avoids it)
+		{"credstore", ""},   // even generic has "credstore" → ultimate "" fallback
+	} {
+		e := NoLeakAssertion([]byte("here is "+tc.sec+" leaking"), tc.sec)
 		if e == nil {
-			t.Fatalf("%q: leak not detected", sec)
+			t.Fatalf("%q: leak not detected (error must stay non-nil)", tc.sec)
 		}
-		if strings.Contains(e.Error(), sec) {
-			t.Fatalf("%q: error string echoes the secret value: %q", sec, e.Error())
+		if strings.Contains(e.Error(), tc.sec) {
+			t.Fatalf("%q: error echoes the secret value: %q", tc.sec, e.Error())
 		}
+		if e.Error() != tc.want {
+			t.Fatalf("%q: error = %q, want exactly %q", tc.sec, e.Error(), tc.want)
+		}
+	}
+
+	// Adversarial / boundary inputs the no-leak contract demands.
+	if err := NoLeakAssertion(nil); err != nil {
+		t.Fatalf("nil output, no secrets → %v, want nil", err)
+	}
+	if err := NoLeakAssertion([]byte{}, "tok"); err != nil {
+		t.Fatalf("empty output → %v, want nil", err)
+	}
+	// Multibyte/UTF-8 secret must be detected and not echoed.
+	const uni = "naïve-токен-🔑"
+	eu := NoLeakAssertion([]byte("dump: naïve-токен-🔑 here"), uni)
+	if eu == nil || strings.Contains(eu.Error(), uni) {
+		t.Fatalf("utf-8 secret: err=%v", eu)
 	}
 }
 
