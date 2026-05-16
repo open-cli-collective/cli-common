@@ -64,9 +64,12 @@ func (e *RefError) Error() string {
 		return fmt.Sprintf("credstore: credential ref %q must be \"<service>/<profile>\" (exactly one '/')", e.Ref)
 	case RefErrorInvalidChar:
 		return fmt.Sprintf("credstore: %s segment in credential ref %q contains a character outside [A-Za-z0-9_-]", e.Segment, e.Ref)
-	default:
-		return fmt.Sprintf("credstore: invalid credential ref %q", e.Ref)
 	}
+	// Unreachable for the defined RefErrorKind values — the switch above is
+	// exhaustive. Kept as a defensive fallback for an out-of-range Kind so
+	// Error never returns "" without introducing a tested-impossible
+	// default branch.
+	return fmt.Sprintf("credstore: invalid credential ref %q", e.Ref)
 }
 
 // Is reports whether target is a *RefError of the same Kind, so callers

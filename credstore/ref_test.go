@@ -3,6 +3,7 @@ package credstore
 import (
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -61,6 +62,11 @@ func TestFormatRef(t *testing.T) {
 		{"invalid service char", "svc.io", "default", "", ErrRefInvalidChar},
 		{"invalid profile char", "svc", "pro file", "", ErrRefInvalidChar},
 		{"slash in segment", "a/b", "default", "", ErrRefInvalidChar},
+		// Pin validation order: empty is checked before invalid-char, and
+		// service is checked before profile. A reorder must fail these.
+		{"both empty", "", "", "", ErrRefEmpty},
+		{"empty service beats invalid profile", "", "bad char", "", ErrRefEmpty},
+		{"invalid service beats empty profile", "bad.svc", "", "", ErrRefInvalidChar},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -106,8 +112,10 @@ func TestRefErrorMessageHasNoSecretButNamesRef(t *testing.T) {
 	if re.Segment != "profile" {
 		t.Fatalf("Segment = %q, want %q", re.Segment, "profile")
 	}
-	if msg := re.Error(); msg == "" {
-		t.Fatal("Error() returned empty string")
+	// The message must name the (non-secret, §1.2) ref so it is actionable.
+	msg := re.Error()
+	if !strings.Contains(msg, "svc/bad char") {
+		t.Fatalf("Error() = %q, expected it to name the ref %q", msg, "svc/bad char")
 	}
 }
 

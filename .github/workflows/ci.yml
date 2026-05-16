@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# bash on every runner (Git Bash on windows-latest): avoids PowerShell
+# native-arg mangling of flags like -coverprofile=coverage.out, and lets
+# the tidy check be written portably.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build-test:
     strategy:
@@ -20,7 +27,14 @@ jobs:
       - name: Tidy
         run: |
           go mod tidy
-          git diff --exit-code -- go.mod go.sum
+          # Catch both modified tracked and newly-generated untracked
+          # go.mod/go.sum (the latter once later tickets add deps).
+          if [ -n "$(git status --porcelain -- go.mod go.sum)" ]; then
+            echo "go.mod/go.sum not tidy:"
+            git status --porcelain -- go.mod go.sum
+            git diff -- go.mod go.sum
+            exit 1
+          fi
       - name: Build
         run: go build -v ./...
       - name: Test
