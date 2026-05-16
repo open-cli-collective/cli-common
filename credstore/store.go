@@ -221,10 +221,9 @@ func openWithDeps(
 // (selectBackend) plus the Linux auto-only Secret Service
 // classification. No backend is constructed and probe is injected, so
 // every trigger / no-trigger case is deterministic and OS-independent.
-// The (secret-service, SourceAuto) pair uniquely identifies the Linux
-// auto default — explicit/env/config carry their own Source and
-// osDefaultBackend returns secret-service only for linux — so no
-// separate GOOS re-check is needed. On fallback kind becomes
+// The (secret-service, SourceAuto) pair identifies the Linux auto
+// default; an explicit goos == "linux" guard is also applied so the
+// D-Bus probe stays self-contained. On fallback kind becomes
 // BackendFile while src stays SourceAuto, so Backend() truthfully
 // reports (file, auto).
 func resolveBackend(
@@ -238,8 +237,12 @@ func resolveBackend(
 	if err != nil {
 		return "", "", err
 	}
-	if kind == BackendSecretService && src == SourceAuto {
-		b, e := linuxAutoBackend(func() error { return probe(service, getenv) })
+	// goos == "linux" is implied today (osDefaultBackend returns
+	// secret-service only for linux) but stated explicitly so the
+	// security-sensitive D-Bus probe stays self-contained if a future
+	// platform also defaults to secret-service.
+	if kind == BackendSecretService && src == SourceAuto && goos == "linux" {
+		b, e := linuxAutoBackend(func() error { return probe(service, getenv) }, backendEnvVar(service))
 		if e != nil {
 			return "", "", e
 		}

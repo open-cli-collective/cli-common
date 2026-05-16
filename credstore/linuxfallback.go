@@ -71,32 +71,37 @@ func classifySecretServiceErr(err error) ssClass {
 		return ssAmbiguous
 	}
 	// Connection-setup failures surface before any call as a plain
-	// (non-dbus.Error) error. ONLY an explicit session-bus signature is
-	// unavailable; a bare filesystem phrase (e.g. "no such file or
-	// directory") is not, so an unrelated FS error cannot cause a
-	// stealth file downgrade.
+	// (non-dbus.Error) error. Match ONLY the address-determination
+	// signatures: the env-var name, or godbus's "couldn't determine
+	// address of session bus" (hence "determine" + "session bus"
+	// co-occurring). A bare "session bus" substring is intentionally
+	// NOT enough — a message like "session bus is locked and requires
+	// authentication" must stay ambiguous (→ fail closed), never become
+	// a stealth file downgrade. Likewise a bare filesystem phrase.
 	msg := strings.ToLower(err.Error())
 	if strings.Contains(msg, "dbus_session_bus_address") ||
-		strings.Contains(msg, "session bus") {
+		(strings.Contains(msg, "session bus") && strings.Contains(msg, "determine")) {
 		return ssUnavailable
 	}
 	return ssAmbiguous
 }
 
 // linuxAutoBackend decides the Linux auto-path backend from a Secret
-// Service probe (§1.4 lines 152-157). It needs nothing but the probe:
-// file-passphrase handling happens later in openOSBackend and the
-// fail-closed message is static.
-func linuxAutoBackend(probe func() error) (Backend, error) {
+// Service probe (§1.4 lines 152-157). envVar is the resolved
+// per-service backend-selector name (e.g. ATLASSIAN_CLI_KEYRING_BACKEND)
+// so the fail-closed remediation is a copy-pasteable command, not an
+// un-substituted "<SERVICE>" template. File-passphrase handling happens
+// later in openOSBackend.
+func linuxAutoBackend(probe func() error, envVar string) (Backend, error) {
 	switch classifySecretServiceErr(probe()) {
 	case ssReachable:
 		return BackendSecretService, nil
 	case ssUnavailable:
 		return BackendFile, nil
 	case ssDenied:
-		return "", fmt.Errorf("%w: secret-service is present but the keyring is locked or denied access (probe: list keys); unlock it (gnome-keyring-daemon, seahorse, kwalletmanager) or set <SERVICE>_KEYRING_BACKEND=file to use the encrypted file backend", ErrSecretServiceFailClosed)
+		return "", fmt.Errorf("%w: secret-service is present but the keyring is locked or denied access (probe: list keys); unlock it (gnome-keyring-daemon, seahorse, kwalletmanager) or set %s=file to use the encrypted file backend", ErrSecretServiceFailClosed, envVar)
 	case ssAmbiguous:
-		return "", fmt.Errorf("%w: could not confirm secret-service availability (probe: list keys returned an unrecognized failure); failing closed instead of silently downgrading — unlock the keyring (gnome-keyring-daemon, seahorse, kwalletmanager) or set <SERVICE>_KEYRING_BACKEND=file", ErrSecretServiceFailClosed)
+		return "", fmt.Errorf("%w: could not confirm secret-service availability (probe: list keys returned an unrecognized failure); failing closed instead of silently downgrading — unlock the keyring (gnome-keyring-daemon, seahorse, kwalletmanager) or set %s=file", ErrSecretServiceFailClosed, envVar)
 	}
 	// Unreached: classifySecretServiceErr only ever returns one of the
 	// four classes above. Defensive fail-closed keeps the contract if a

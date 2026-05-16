@@ -27,6 +27,7 @@ func TestClassifySecretServiceErr(t *testing.T) {
 		{"session bus phrase", errors.New("dbus: couldn't determine address of session bus"), ssUnavailable},
 		{"DBUS_SESSION_BUS_ADDRESS phrase", errors.New("dbus: DBUS_SESSION_BUS_ADDRESS not set"), ssUnavailable},
 		{"bare ENOENT is NOT unavailable", errors.New("open /run/user/1000/bus: no such file or directory"), ssAmbiguous},
+		{"locked session-bus phrase stays ambiguous", errors.New("session bus is locked and requires authentication"), ssAmbiguous},
 		{"opaque error is ambiguous", errors.New("totally opaque"), ssAmbiguous},
 		{"wrapped typed error still classified", fmt.Errorf("probe failed: %w", &dbus.Error{Name: "org.freedesktop.Secret.Error.IsLocked"}), ssDenied},
 		// godbus returns dbus.Error by value at real call sites, so the
@@ -46,12 +47,13 @@ func TestClassifySecretServiceErr(t *testing.T) {
 }
 
 func TestLinuxAutoBackend(t *testing.T) {
-	if b, err := linuxAutoBackend(func() error { return nil }); err != nil || b != BackendSecretService {
+	const envVar = "ATLASSIAN_CLI_KEYRING_BACKEND"
+	if b, err := linuxAutoBackend(func() error { return nil }, envVar); err != nil || b != BackendSecretService {
 		t.Fatalf("reachable → (%q,%v), want (secret-service,nil)", b, err)
 	}
 	if b, err := linuxAutoBackend(func() error {
 		return &dbus.Error{Name: "org.freedesktop.DBus.Error.ServiceUnknown"}
-	}); err != nil || b != BackendFile {
+	}, envVar); err != nil || b != BackendFile {
 		t.Fatalf("unavailable → (%q,%v), want (file,nil)", b, err)
 	}
 
@@ -64,7 +66,7 @@ func TestLinuxAutoBackend(t *testing.T) {
 		{"ambiguous", func() error { return errors.New("opaque") }, "could not confirm"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			b, err := linuxAutoBackend(tc.probe)
+			b, err := linuxAutoBackend(tc.probe, envVar)
 			if !errors.Is(err, ErrSecretServiceFailClosed) {
 				t.Fatalf("err = %v, want ErrSecretServiceFailClosed", err)
 			}
@@ -74,6 +76,11 @@ func TestLinuxAutoBackend(t *testing.T) {
 			msg := err.Error()
 			if !strings.Contains(msg, "secret-service") || !strings.Contains(msg, "list keys") {
 				t.Fatalf("error must name backend + probe op: %v", err)
+			}
+			// Remediation must be copy-pasteable: the resolved env var,
+			// never the un-substituted "<SERVICE>" template.
+			if !strings.Contains(msg, envVar) || strings.Contains(msg, "<SERVICE>") {
+				t.Fatalf("error must name the resolved env var %q and not the placeholder: %v", envVar, err)
 			}
 			for _, tool := range []string{"gnome-keyring-daemon", "seahorse", "kwalletmanager"} {
 				if !strings.Contains(msg, tool) {
