@@ -86,6 +86,13 @@ var (
 	// Fail-closed, §1.4: the error names the env var and never contains
 	// secret material.
 	ErrFilePassphraseRequired = errors.New("credstore: file backend passphrase required")
+	// ErrSecretServiceFailClosed is returned by Open on the Linux auto
+	// path when Secret Service is present but unusable (locked / denied
+	// / auth failure) or its state is ambiguous. Per §1.4 the wrapper
+	// fails closed rather than silently downgrading to the file backend;
+	// the wrapped error is actionable (names the backend, the probe
+	// operation, and remediation) and contains no secret material.
+	ErrSecretServiceFailClosed = errors.New("credstore: secret-service unavailable, failing closed")
 )
 
 // KeyError is returned by Set/Delete when a key is not in the Store's
@@ -151,9 +158,25 @@ type Store struct {
 }
 
 // Open returns a service-scoped Store. The service segment must satisfy
-// the §1.3 ref grammar. Backend selection fails closed: only
-// BackendMemory is implemented in this unit.
+// the §1.3 ref grammar. Backend selection (§1.4) and the Linux
+// auto-fallback classification fail closed. It delegates to
+// openWithDeps with the real environment, GOOS, and Secret Service
+// probe; the seam exists only for deterministic testing.
 func Open(service string, opts *Options) (*Store, error) {
+	return openWithDeps(service, opts, os.Getenv, runtime.GOOS, probeSecretService)
+}
+
+// openWithDeps is Open with its environment dependencies injected:
+// getenv, the target goos, and the Secret Service probe. It is thin —
+// the selection+classification decision lives in the pure
+// resolveBackend; this only validates inputs and constructs.
+func openWithDeps(
+	service string,
+	opts *Options,
+	getenv func(string) string,
+	goos string,
+	probe func(service string, getenv func(string) string) error,
+) (*Store, error) {
 	if service == "" {
 		return nil, &RefError{Kind: RefErrorEmpty, Segment: "service"}
 	}
@@ -169,7 +192,7 @@ func Open(service string, opts *Options) (*Store, error) {
 		return nil, err
 	}
 
-	kind, src, err := selectBackend(service, opts, os.Getenv, runtime.GOOS)
+	kind, src, err := resolveBackend(service, opts, getenv, goos, probe)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +201,7 @@ func Open(service string, opts *Options) (*Store, error) {
 	if kind == BackendMemory {
 		be = newMemoryBackend()
 	} else {
-		be, err = openOSBackend(kind, service, opts, os.Getenv)
+		be, err = openOSBackend(kind, service, opts, getenv)
 		if err != nil {
 			return nil, err
 		}
@@ -192,6 +215,40 @@ func Open(service string, opts *Options) (*Store, error) {
 		allowedList: allowedList,
 		be:          be,
 	}, nil
+}
+
+// resolveBackend is the pure backend decision: §1.4 precedence
+// (selectBackend) plus the Linux auto-only Secret Service
+// classification. No backend is constructed and probe is injected, so
+// every trigger / no-trigger case is deterministic and OS-independent.
+// The (secret-service, SourceAuto) pair identifies the Linux auto
+// default; an explicit goos == "linux" guard is also applied so the
+// D-Bus probe stays self-contained. On fallback kind becomes
+// BackendFile while src stays SourceAuto, so Backend() truthfully
+// reports (file, auto).
+func resolveBackend(
+	service string,
+	opts *Options,
+	getenv func(string) string,
+	goos string,
+	probe func(service string, getenv func(string) string) error,
+) (Backend, Source, error) {
+	kind, src, err := selectBackend(service, opts, getenv, goos)
+	if err != nil {
+		return "", "", err
+	}
+	// goos == "linux" is implied today (osDefaultBackend returns
+	// secret-service only for linux) but stated explicitly so the
+	// security-sensitive D-Bus probe stays self-contained if a future
+	// platform also defaults to secret-service.
+	if kind == BackendSecretService && src == SourceAuto && goos == "linux" {
+		b, e := linuxAutoBackend(func() error { return probe(service, getenv) }, backendEnvVar(service))
+		if e != nil {
+			return "", "", e
+		}
+		kind = b // secret-service (reachable) or file (unavailable); src stays auto
+	}
+	return kind, src, nil
 }
 
 // normalizeAllowedKeys syntax-checks, copies, dedupes, and sorts the
