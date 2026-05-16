@@ -98,6 +98,10 @@ type backend interface {
 	set(itemKey, value string, overwrite bool) error
 	delete(itemKey string) error
 	exists(itemKey string) (bool, error)
+	// listKeys returns every stored Item.Key ("<profile>/<key>"). Added
+	// for the bundle operations (§2.1); the bundle unit is the interface
+	// extension INT-430's review anticipated.
+	listKeys() ([]string, error)
 	kind() Backend
 	close() error
 }

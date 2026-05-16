@@ -8,6 +8,20 @@ import "sync"
 type memoryBackend struct {
 	mu sync.Mutex
 	m  map[string]string
+
+	// Test seams (§2.1): when non-nil, consulted to fail the corresponding
+	// mutation. Set only by same-package tests to drive
+	// SetBundle/DeleteBundle rollback and attempt-all paths.
+	//
+	// setHook fires on EVERY set, including SetBundle's rollback *restore*
+	// writes — a test that hooks a key which also has a prior snapshot
+	// value would block its restore too. Tests therefore hook only
+	// new/no-prior keys (or distinguish by call). deleteHook fires only
+	// for keys that actually exist (consulted after the not-found check),
+	// so a hook on an already-absent key cannot turn a clean rollback
+	// into a spurious failure.
+	setHook    func(itemKey string) error
+	deleteHook func(itemKey string) error
 }
 
 func newMemoryBackend() *memoryBackend {
@@ -38,6 +52,11 @@ func (b *memoryBackend) set(itemKey, value string, overwrite bool) error {
 	if b.m == nil {
 		return ErrStoreClosed
 	}
+	if b.setHook != nil {
+		if err := b.setHook(itemKey); err != nil {
+			return err
+		}
+	}
 	if !overwrite {
 		if _, ok := b.m[itemKey]; ok {
 			return ErrExists
@@ -56,6 +75,11 @@ func (b *memoryBackend) delete(itemKey string) error {
 	if _, ok := b.m[itemKey]; !ok {
 		return ErrNotFound
 	}
+	if b.deleteHook != nil {
+		if err := b.deleteHook(itemKey); err != nil {
+			return err
+		}
+	}
 	delete(b.m, itemKey)
 	return nil
 }
@@ -68,6 +92,19 @@ func (b *memoryBackend) exists(itemKey string) (bool, error) {
 	}
 	_, ok := b.m[itemKey]
 	return ok, nil
+}
+
+func (b *memoryBackend) listKeys() ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.m == nil {
+		return nil, ErrStoreClosed
+	}
+	keys := make([]string, 0, len(b.m))
+	for k := range b.m {
+		keys = append(keys, k)
+	}
+	return keys, nil
 }
 
 // close best-effort clears values then drops the map. Go string secrets
