@@ -83,13 +83,31 @@ func TestRedactOverlappingSameSecret(t *testing.T) {
 	}
 }
 
-func TestRedactPlaceholderSelfMatchSafe(t *testing.T) {
-	// A secret that looks like placeholder text cannot defeat scrubbing
-	// because matching is against the original input only.
-	r := NewRedactor("len")
-	got := r.Redact("the len value")
-	if strings.Contains(got, "the len ") {
-		t.Fatalf("secret 'len' not redacted: %q", got)
+func TestRedactPlaceholderCollisionFailsClosed(t *testing.T) {
+	// The placeholder "<redacted, len=N>" literally contains "redacted",
+	// "len", and the digits of N. A loaded secret equal to any of those
+	// must NOT survive in the output via the placeholder. Fail-closed:
+	// the colliding span drops to empty. The authoritative assertion is
+	// NoLeakAssertion over the redacted output itself.
+	cases := []struct {
+		name    string
+		secrets []string
+		input   string
+	}{
+		{"secret len", []string{"len"}, "the len value"},
+		{"secret redacted", []string{"redacted"}, "say redacted now"},
+		{"secret + placeholder-substring secret", []string{"token-value", "len"}, "token-value"},
+		{"numeric secret colliding with len=N", []string{"11"}, "abcdefghijk"}, // len 11 → "len=11"
+		{"angle bracket secret", []string{">"}, "a>b>c"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRedactor(tc.secrets...)
+			got := r.Redact(tc.input)
+			if err := NoLeakAssertion([]byte(got), tc.secrets...); err != nil {
+				t.Fatalf("redacted output still leaks: input=%q got=%q (%v)", tc.input, got, err)
+			}
+		})
 	}
 }
 
@@ -153,6 +171,15 @@ func TestRedactHeaders(t *testing.T) {
 	}
 
 	r.RedactHeaders(nil) // no panic
+
+	// Always-set placeholder must also fail closed when a secret collides
+	// with the placeholder literal (e.g. secret "redacted").
+	rc := NewRedactor("redacted")
+	hc := http.Header{"Authorization": {"Bearer something"}}
+	rc.RedactHeaders(hc)
+	if err := NoLeakAssertion([]byte(strings.Join(hc["Authorization"], "")), "redacted"); err != nil {
+		t.Fatalf("always-set header leaked via placeholder: %v (%q)", err, hc["Authorization"])
+	}
 }
 
 type shortWriter struct{ wrote int }

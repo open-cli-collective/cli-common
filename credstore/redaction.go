@@ -81,6 +81,36 @@ func redactedPlaceholder(n int) string {
 	return fmt.Sprintf("<redacted, len=%d>", n)
 }
 
+// containsAnySecret reports whether any loaded secret is a substring of s.
+// secrets are guaranteed non-empty (filtered at every ingress).
+func containsAnySecret(s string, secrets []string) bool {
+	for _, sec := range secrets {
+		if strings.Contains(s, sec) {
+			return true
+		}
+	}
+	return false
+}
+
+// safeReplacement is the fail-closed replacement for a redacted span. It
+// is normally the standard "<redacted, len=N>" placeholder — but that
+// literal itself contains the substrings "redacted", "len", and the
+// decimal N, so a loaded secret equal to e.g. "len", "redacted", or a
+// digit string would be reintroduced verbatim by the placeholder and
+// leak (§1.12). When that would happen the span is dropped to the empty
+// string instead: maximal over-redaction, which can contain no non-empty
+// secret. Surrounding gap text is provably secret-free (every secret
+// occurrence is inside some interval), so the assembled output is
+// guaranteed to contain no loaded secret. Normal token secrets never
+// collide, so the common path always emits the standard placeholder.
+func safeReplacement(n int, secrets []string) string {
+	rep := redactedPlaceholder(n)
+	if containsAnySecret(rep, secrets) {
+		return ""
+	}
+	return rep
+}
+
 // Redact replaces every occurrence of every loaded secret in s with
 // "<redacted, len=N>". It scans the original input for all secret
 // occurrences as half-open byte intervals, unions intervals that
@@ -92,8 +122,11 @@ func redactedPlaceholder(n int) string {
 // span length — still only a length, never secret material.
 //
 // Matching against the original input (not iterative replacement) means
-// the result is order-independent and a secret that coincidentally looks
-// like placeholder text cannot escape scrubbing.
+// the result is order-independent. If the standard placeholder would
+// itself contain a loaded secret (e.g. a secret of "len" or a digit
+// string landing in "len=N"), that span fails closed to the empty string
+// (see safeReplacement) so the placeholder can never reintroduce a
+// secret.
 func (r *Redactor) Redact(s string) string {
 	if s == "" {
 		return s
@@ -130,7 +163,7 @@ func (r *Redactor) Redact(s string) string {
 	curStart, curEnd := spans[0].start, spans[0].end
 	flush := func() {
 		b.WriteString(s[prev:curStart])
-		b.WriteString(redactedPlaceholder(curEnd - curStart))
+		b.WriteString(safeReplacement(curEnd-curStart, secrets))
 		prev = curEnd
 	}
 	for _, sp := range spans[1:] {
@@ -172,10 +205,11 @@ func (r *Redactor) RedactHeaders(h http.Header) {
 	if h == nil {
 		return
 	}
+	secrets := r.snapshot()
 	for name, values := range h {
 		if _, force := alwaysRedactHeaders[strings.ToLower(name)]; force {
 			for i, v := range values {
-				values[i] = redactedPlaceholder(len(v))
+				values[i] = safeReplacement(len(v), secrets)
 			}
 			continue
 		}
