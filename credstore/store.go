@@ -203,7 +203,10 @@ func (s *Store) checkAllowed(key string) error {
 	if _, ok := s.allowed[key]; ok {
 		return nil
 	}
-	return &KeyError{Key: key, Allowed: s.allowedList}
+	// Copy: KeyError.Allowed is exported; a caller mutating it must not be
+	// able to corrupt the Store's future error messages.
+	allowed := append([]string(nil), s.allowedList...)
+	return &KeyError{Key: key, Allowed: allowed}
 }
 
 type setOptions struct{ overwrite bool }

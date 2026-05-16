@@ -79,6 +79,9 @@ func TestSingleKeyRoundTrip(t *testing.T) {
 	if _, err := s.Get("default", "api_token"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get after delete err = %v, want ErrNotFound", err)
 	}
+	if ok, err := s.Exists("default", "api_token"); err != nil || ok {
+		t.Fatalf("Exists after delete = (%v,%v), want (false,nil)", ok, err)
+	}
 }
 
 func TestSetOverwrite(t *testing.T) {
@@ -163,15 +166,25 @@ func TestSyntaxErrors(t *testing.T) {
 		{"space in profile", "pro file", "k", "profile"},
 		{"empty profile", "", "k", "profile"},
 	}
+	// Each of Set/Get/Delete/Exists validates independently via
+	// joinItemKey, so all four entry points must reject bad refs.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := s.Set(c.profile, c.key, "v")
-			var re *RefError
-			if !errors.As(err, &re) {
-				t.Fatalf("Set(%q,%q) err = %v, want *RefError", c.profile, c.key, err)
+			ops := map[string]func() error{
+				"Set":    func() error { return s.Set(c.profile, c.key, "v") },
+				"Get":    func() error { _, e := s.Get(c.profile, c.key); return e },
+				"Delete": func() error { return s.Delete(c.profile, c.key) },
+				"Exists": func() error { _, e := s.Exists(c.profile, c.key); return e },
 			}
-			if re.Segment != c.seg {
-				t.Fatalf("Segment = %q, want %q", re.Segment, c.seg)
+			for op, fn := range ops {
+				err := fn()
+				var re *RefError
+				if !errors.As(err, &re) {
+					t.Fatalf("%s(%q,%q) err = %v, want *RefError", op, c.profile, c.key, err)
+				}
+				if re.Segment != c.seg {
+					t.Fatalf("%s Segment = %q, want %q", op, re.Segment, c.seg)
+				}
 			}
 		})
 	}
@@ -210,14 +223,55 @@ func TestCloseContract(t *testing.T) {
 	}
 }
 
+func TestMemoryBackendClosedPaths(t *testing.T) {
+	// Exercise the backend's defensive nil-map branches directly: the
+	// Store.closed guard normally prevents these from being reached, but
+	// later units may call backends without that guard.
+	b := newMemoryBackend()
+	if b.kind() != BackendMemory {
+		t.Fatalf("kind = %v, want memory", b.kind())
+	}
+	if err := b.set("p/k", "v", false); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := b.close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := b.close(); err != nil {
+		t.Fatalf("close (idempotent): %v", err)
+	}
+	if _, err := b.get("p/k"); !errors.Is(err, ErrStoreClosed) {
+		t.Fatalf("get after close = %v, want ErrStoreClosed", err)
+	}
+	if err := b.set("p/k", "v", true); !errors.Is(err, ErrStoreClosed) {
+		t.Fatalf("set after close = %v, want ErrStoreClosed", err)
+	}
+	if err := b.delete("p/k"); !errors.Is(err, ErrStoreClosed) {
+		t.Fatalf("delete after close = %v, want ErrStoreClosed", err)
+	}
+	if _, err := b.exists("p/k"); !errors.Is(err, ErrStoreClosed) {
+		t.Fatalf("exists after close = %v, want ErrStoreClosed", err)
+	}
+}
+
 func TestConcurrentSetGet(t *testing.T) {
 	s := openMem(t)
 	_ = s.Set("default", "k", "seed")
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(2)
-		go func() { defer wg.Done(); _ = s.Set("default", "k", "v", WithOverwrite()) }()
-		go func() { defer wg.Done(); _, _ = s.Get("default", "k") }()
+		go func() {
+			defer wg.Done()
+			if err := s.Set("default", "k", "v", WithOverwrite()); err != nil {
+				t.Errorf("concurrent Set: unexpected err %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if _, err := s.Get("default", "k"); err != nil {
+				t.Errorf("concurrent Get: unexpected err %v", err)
+			}
+		}()
 	}
 	wg.Wait()
 }
