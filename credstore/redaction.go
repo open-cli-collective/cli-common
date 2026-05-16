@@ -15,6 +15,7 @@ package credstore
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -275,12 +276,21 @@ func (rw *redactWriter) Write(p []byte) (int, error) {
 // ordinal and length only — never the value, not even a masked prefix
 // (§1.8/§1.12 treat masked secret material as still secret). Empty
 // secrets are skipped. Returns nil when output is clean.
+//
+// The error string is itself fail-closed: the detailed "secret #N
+// (len=K)" wording can contain a short or placeholder-shaped secret
+// (a secret of "len", "1", or "secret" is a substring of the message),
+// so the message is degraded to a guaranteed secret-free form — finally
+// the empty string — before being returned. A leak still surfaces as a
+// non-nil error; it just never echoes the value in the failure path.
 func NoLeakAssertion(output []byte, secrets ...string) error {
 	var leaked []string
+	var nonEmpty []string
 	for i, sec := range secrets {
 		if sec == "" {
 			continue
 		}
+		nonEmpty = append(nonEmpty, sec)
 		if bytes.Contains(output, []byte(sec)) {
 			leaked = append(leaked, fmt.Sprintf("secret #%d (len=%d)", i+1, len(sec)))
 		}
@@ -288,5 +298,22 @@ func NoLeakAssertion(output []byte, secrets ...string) error {
 	if len(leaked) == 0 {
 		return nil
 	}
-	return fmt.Errorf("credstore: secret material leaked into output: %s", strings.Join(leaked, ", "))
+	msg := "credstore: secret material leaked into output: " + strings.Join(leaked, ", ")
+	return errors.New(safeErrorText(msg, nonEmpty))
+}
+
+// safeErrorText returns msg unless a loaded secret is a substring of it,
+// then a progressively less-detailed, guaranteed secret-free fallback,
+// finally "" (which can contain no non-empty secret). This applies the
+// same fail-closed principle as safeReplacement to the failure path so
+// NoLeakAssertion never echoes a value (§1.12). secrets are all non-empty.
+func safeErrorText(msg string, secrets []string) string {
+	if !containsAnySecret(msg, secrets) {
+		return msg
+	}
+	const generic = "credstore: a loaded value leaked into output (details withheld to avoid echoing it)"
+	if !containsAnySecret(generic, secrets) {
+		return generic
+	}
+	return ""
 }

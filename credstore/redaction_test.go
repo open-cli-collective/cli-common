@@ -97,7 +97,7 @@ func TestRedactPlaceholderCollisionFailsClosed(t *testing.T) {
 		{"secret len", []string{"len"}, "the len value"},
 		{"secret redacted", []string{"redacted"}, "say redacted now"},
 		{"secret + placeholder-substring secret", []string{"token-value", "len"}, "token-value"},
-		{"numeric secret colliding with len=N", []string{"11"}, "abcdefghijk"}, // len 11 → "len=11"
+		{"numeric secret colliding with len=N", []string{"abcdefghijk", "11"}, "abcdefghijk"}, // span len 11 → "len=11"
 		{"angle bracket secret", []string{">"}, "a>b>c"},
 		// A dropped colliding span lets gap text join into a *different*
 		// loaded secret across the seam: "a"+""+"b" == "ab".
@@ -260,6 +260,18 @@ func TestNoLeakAssertion(t *testing.T) {
 	err = NoLeakAssertion([]byte("aaa bbb"), "aaa", "", "bbb")
 	if err == nil || !strings.Contains(err.Error(), "secret #1") || !strings.Contains(err.Error(), "secret #3") {
 		t.Fatalf("aggregate = %v", err)
+	}
+
+	// The error string is itself fail-closed: short / placeholder-shaped
+	// secrets must not appear in the message either. Error stays non-nil.
+	for _, sec := range []string{"len", "1", "secret", "credstore"} {
+		e := NoLeakAssertion([]byte("here is "+sec+" leaking"), sec)
+		if e == nil {
+			t.Fatalf("%q: leak not detected", sec)
+		}
+		if strings.Contains(e.Error(), sec) {
+			t.Fatalf("%q: error string echoes the secret value: %q", sec, e.Error())
+		}
 	}
 }
 
