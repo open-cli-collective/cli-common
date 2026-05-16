@@ -1,10 +1,9 @@
 package credstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -26,28 +25,15 @@ func TestFormatMigrationLine(t *testing.T) {
 	}
 }
 
-func TestEmitMigrationStderr(t *testing.T) {
-	// Capture os.Stderr and os.Stdout via pipes to prove the line goes to
-	// stderr (with a newline) and stdout is untouched.
-	origErr, origOut := os.Stderr, os.Stdout
-	er, ew, _ := os.Pipe()
-	or, ow, _ := os.Pipe()
-	os.Stderr, os.Stdout = ew, ow
-	t.Cleanup(func() { os.Stderr, os.Stdout = origErr, origOut })
-
-	EmitMigrationStderr("api_token", "atlassian-cli/default")
-
-	_ = ew.Close()
-	_ = ow.Close()
-	gotErr, _ := io.ReadAll(er)
-	gotOut, _ := io.ReadAll(or)
-
+func TestEmitMigration(t *testing.T) {
+	// Drive the writer seam with an injected buffer — no global os.Stderr
+	// mutation, so this is parallelism-safe and surfaces no swallowed I/O
+	// errors. EmitMigrationStderr is the trivial os.Stderr delegate.
+	var buf bytes.Buffer
+	emitMigration(&buf, "api_token", "atlassian-cli/default")
 	want := "migrated api_token to keyring at atlassian-cli/default; this is a one-time operation\n"
-	if string(gotErr) != want {
-		t.Fatalf("stderr = %q, want %q", gotErr, want)
-	}
-	if len(gotOut) != 0 {
-		t.Fatalf("stdout must be untouched, got %q", gotOut)
+	if buf.String() != want {
+		t.Fatalf("emitMigration wrote %q, want %q", buf.String(), want)
 	}
 }
 

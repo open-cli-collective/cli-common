@@ -14,6 +14,7 @@ package credstore
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -33,13 +34,24 @@ func formatMigrationLine(field, ref string) string {
 	return fmt.Sprintf("migrated %s to keyring at %s; this is a one-time operation", field, ref)
 }
 
+// emitMigration writes the one-time migration line to w. Unexported
+// writer seam so tests inject a buffer instead of mutating the global
+// os.Stderr file descriptor (consistent with the package's pure/impure
+// seam convention, e.g. formatMigrationLine vs the public entry point).
+func emitMigration(w io.Writer, field, ref string) {
+	// Best-effort diagnostic line (like the stdlib fmt.Println family): a
+	// failed stderr write has no actionable recovery and must not change
+	// the standard-mandated EmitMigrationStderr(field, ref) signature.
+	_, _ = fmt.Fprintln(w, formatMigrationLine(field, ref))
+}
+
 // EmitMigrationStderr prints the one-time migration signal to stderr
 // (§1.8). A CLI calls this on the run where it moved a legacy plaintext
 // field into the keyring. field is the legacy config field name; ref is
 // the credential ref it now lives under. Never include a secret value in
 // either argument — by contract these are descriptive identifiers only.
 func EmitMigrationStderr(field, ref string) {
-	fmt.Fprintln(os.Stderr, formatMigrationLine(field, ref))
+	emitMigration(os.Stderr, field, ref)
 }
 
 // MigrationChange is one entry in the _migration signal: which legacy
