@@ -33,7 +33,11 @@ func openOSBackend(kind Backend, service string, opts *Options) (backend, error)
 		AllowedBackends: []keyring.BackendType{keyring.BackendType(kind)},
 	}
 	if kind == BackendFile {
-		cfg.FileDir = fileKeyringDir(service)
+		dir, err := fileKeyringDir(service)
+		if err != nil {
+			return nil, err
+		}
+		cfg.FileDir = dir
 		pwFunc, err := filePasswordFunc(service, opts)
 		if err != nil {
 			return nil, err
@@ -51,17 +55,19 @@ func openOSBackend(kind Backend, service string, opts *Options) (backend, error)
 // isolation seam. XDG Base Directory: $XDG_DATA_HOME/<service>/keyring,
 // else $HOME/.local/share/<service>/keyring. Tests set XDG_DATA_HOME to
 // t.TempDir() so a file-backend write never touches a real home dir; no
-// public Options field is needed for that.
-func fileKeyringDir(service string) string {
+// public Options field is needed for that. Fail-closed: if neither
+// XDG_DATA_HOME nor a home directory resolves, error rather than write
+// an encrypted secret store under the process's working directory.
+func fileKeyringDir(service string) (string, error) {
 	base := os.Getenv("XDG_DATA_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			home = "."
+			return "", fmt.Errorf("credstore: cannot resolve a file keyring directory; set XDG_DATA_HOME: %w", err)
 		}
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, service, "keyring")
+	return filepath.Join(base, service, "keyring"), nil
 }
 
 // filePasswordFunc resolves the file backend passphrase: the per-service
