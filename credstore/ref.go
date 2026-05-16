@@ -57,6 +57,11 @@ func (e *RefError) Error() string {
 	switch e.Kind {
 	case RefErrorEmpty:
 		if e.Segment != "" {
+			if e.Ref == "" {
+				// FormatRef path: there is no single ref string, so don't
+				// append a misleading `in credential ref ""`.
+				return fmt.Sprintf("credstore: empty %s segment", e.Segment)
+			}
 			return fmt.Sprintf("credstore: empty %s segment in credential ref %q", e.Segment, e.Ref)
 		}
 		return "credstore: empty credential ref"
@@ -147,7 +152,14 @@ func ParseRef(ref string) (service, profile string, err error) {
 
 // FormatRef is the inverse of ParseRef: it validates both segments and
 // joins them with '/'. The error's Ref field carries the offending
-// segment value (non-secret per §1.2).
+// segment value (non-secret per §1.2), or "" for an empty segment.
+//
+// Validation order is deliberate and pinned by tests: service before
+// profile, and within each segment, empty before charset. It differs from
+// ParseRef's order (which resolves all structural concerns — slash count,
+// segment emptiness — before any charset check) because FormatRef receives
+// the two segments already separated, so there is no structural phase.
+// Keep these orders stable; reordering will fail the pinned test cases.
 func FormatRef(service, profile string) (string, error) {
 	if service == "" {
 		return "", &RefError{Kind: RefErrorEmpty, Segment: "service"}

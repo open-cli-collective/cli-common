@@ -148,6 +148,14 @@ func TestEscapeRefSegment(t *testing.T) {
 	}
 }
 
+func TestEscapeRefSegmentEmptyRejectedDownstream(t *testing.T) {
+	// EscapeRefSegment is the one entry point that accepts invalid input
+	// without an error; make the downstream failure mode explicit.
+	if _, err := FormatRef("svc", EscapeRefSegment("")); !errors.Is(err, ErrRefEmpty) {
+		t.Fatalf("FormatRef with escaped empty segment: err = %v, want ErrRefEmpty", err)
+	}
+}
+
 func TestEscapeRefSegmentUnicodeStaysInCharset(t *testing.T) {
 	// Multi-byte input must still encode entirely within the charset, and a
 	// non-empty input must produce non-empty output usable as a segment.
