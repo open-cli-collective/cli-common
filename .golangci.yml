@@ -1,0 +1,36 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+    - gosec
+    - errorlint
+    - exhaustive
+  settings:
+    revive:
+      # Explicit rule list so behavior is stable across golangci-lint versions.
+      rules:
+        - name: unused-parameter
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/open-cli-collective/cli-common
+
+run:
+  timeout: 5m
