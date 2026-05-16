@@ -66,6 +66,9 @@ func TestDeleteBundle(t *testing.T) {
 	if _, err := s.DeleteBundle(""); !errors.Is(err, ErrRefEmpty) {
 		t.Fatalf("DeleteBundle(\"\") err = %v, want ErrRefEmpty", err)
 	}
+	if _, err := s.DeleteBundle("bad.prof"); !errors.Is(err, ErrRefInvalidChar) {
+		t.Fatalf("DeleteBundle(invalid) err = %v, want ErrRefInvalidChar", err)
+	}
 	if got, err := s.DeleteBundle("default"); err != nil || got != nil {
 		t.Fatalf("DeleteBundle(empty) = (%v,%v), want (nil,nil) idempotent", got, err)
 	}
@@ -106,6 +109,13 @@ func TestDeleteBundleAttemptsAllOnFailure(t *testing.T) {
 		t.Fatalf("error must name both failed keys: %v", err)
 	}
 	eqStrings(t, "DeleteBundle deleted", deleted, []string{"b"})
+	// The keys whose delete failed must still be present (not silently
+	// dropped from tracking).
+	for _, k := range []string{"a", "c"} {
+		if ok, _ := s.Exists("p", k); !ok {
+			t.Fatalf("failed-delete key %q must still be present", k)
+		}
+	}
 }
 
 func TestSetBundleHappyPath(t *testing.T) {
@@ -141,12 +151,13 @@ func TestSetBundleProfileAndEmpty(t *testing.T) {
 func TestSetBundleNoOverwriteConflict(t *testing.T) {
 	s := openMem(t)
 	mustSet(t, s, "default", "exists", "old")
-	res, err := s.SetBundle("default", map[string]string{"exists": "new", "fresh": "v"})
+	mustSet(t, s, "default", "also", "old2")
+	res, err := s.SetBundle("default", map[string]string{"exists": "new", "also": "new2", "fresh": "v"})
 	if !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v, want ErrExists", err)
 	}
-	if !strings.Contains(err.Error(), "exists") {
-		t.Fatalf("error must name conflicting key: %v", err)
+	if !strings.Contains(err.Error(), "exists") || !strings.Contains(err.Error(), "also") {
+		t.Fatalf("error must name all conflicting keys: %v", err)
 	}
 	if res.Written != nil {
 		t.Fatalf("nothing should be written on conflict: %+v", res)
@@ -281,7 +292,7 @@ func TestSetBundleAllowlistEnforced(t *testing.T) {
 		t.Fatalf("nothing written when a key is disallowed: %+v", res)
 	}
 	if ok, _ := s.Exists("default", "a"); ok {
-		t.Fatal("allowed key written despite a sibling being disallowed (validate-all-first)")
+		t.Fatal("no key may be written when a sibling is disallowed (validation precedes all writes)")
 	}
 }
 

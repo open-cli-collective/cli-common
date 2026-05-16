@@ -16,7 +16,8 @@ import (
 //
 //	Written   – writes retained on return (bare keys, sorted)
 //	Restored  – pre-existing keys put back to their prior value by rollback
-//	Deleted   – new keys removed by rollback
+//	Deleted   – new keys the rollback guarantees absent (includes a key
+//	            whose own forward write failed and so was never stored)
 //	Untouched – target keys not changed by this call: a failed
 //	            no-overwrite ErrExists key (left as the racer wrote it)
 //	            plus keys never attempted after the failure point
@@ -161,6 +162,9 @@ func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) 
 		existed[k] = ok
 	}
 	snap := make(map[string]string) // bare key -> prior value (existing only)
+	// Cleared on every return path (incl. a mid-capture get error), per
+	// the §1.5.1 "snapshot cleared before return" contract.
+	defer clearSnapshot(snap)
 	if !so.overwrite {
 		var conflicts []string
 		for _, k := range keys {
@@ -198,17 +202,17 @@ func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) 
 		written = append(written, k)
 	}
 	if writeErr == nil {
-		clearSnapshot(snap)
 		return Result{Written: append([]string(nil), keys...)}, nil
 	}
 
-	// Roll back. ErrExists under !overwrite means a racer owns failedKey
-	// — never touch it; only undo our own writes. Any other error is
-	// ambiguous (a future backend's set may mutate on error) so failedKey
-	// is rolled back too.
-	isExists := errors.Is(writeErr, ErrExists)
+	// Roll back. Only a no-overwrite ErrExists means a racer owns
+	// failedKey — never touch it; just undo our own writes. Any other
+	// error (including a stray ErrExists on the overwrite path) is
+	// ambiguous: a future backend's set may have mutated on error, so
+	// failedKey is rolled back too.
+	isRacerExists := !so.overwrite && errors.Is(writeErr, ErrExists)
 	rbKeys := append([]string(nil), written...)
-	if !isExists {
+	if !isRacerExists {
 		rbKeys = append(rbKeys, failedKey)
 	}
 	sort.Strings(rbKeys)
@@ -223,6 +227,11 @@ func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) 
 			}
 			res.Restored = append(res.Restored, k)
 		} else {
+			// New key (no prior value). Tolerate ErrNotFound: a key whose
+			// forward write itself failed was never stored, but rolling it
+			// back still means "ensured absent", so it is reported in
+			// Deleted — Deleted is the set of keys the rollback guarantees
+			// are not present, not strictly keys that physically existed.
 			if err := s.be.delete(itemKey[k]); err != nil && !errors.Is(err, ErrNotFound) {
 				rbFailed = append(rbFailed, k)
 				continue
@@ -237,20 +246,19 @@ func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) 
 	for _, k := range written {
 		attempted[k] = true
 	}
-	attempted[failedKey] = true // attempted; rolled back unless ErrExists
+	attempted[failedKey] = true // attempted; rolled back unless racer ErrExists
 	var untouched []string
 	for _, k := range keys {
 		if !attempted[k] {
 			untouched = append(untouched, k)
 		}
 	}
-	if isExists {
+	if isRacerExists {
 		untouched = append(untouched, failedKey) // racer's value, left as-is
 	}
 	sort.Strings(untouched)
 	res.Untouched = untouched
 
-	clearSnapshot(snap)
 	if len(rbFailed) > 0 {
 		sort.Strings(rbFailed)
 		return res, fmt.Errorf("credstore: SetBundle(%q): write failed at %q: %w; rollback also failed for %s — keyring may be inconsistent",
