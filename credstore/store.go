@@ -82,7 +82,9 @@ func (e *KeyError) Is(target error) bool {
 	return ok
 }
 
-// ErrKeyNotAllowed is the sentinel for errors.Is against *KeyError.
+// ErrKeyNotAllowed is the sentinel for errors.Is against *KeyError. Its
+// fields must not be mutated by callers — it is a type sentinel, not a
+// value carrier; the actual key/allowed set live on the returned error.
 var ErrKeyNotAllowed = &KeyError{}
 
 // backend is the internal storage abstraction. These core methods should
@@ -241,6 +243,11 @@ func (s *Store) Close() error {
 		return err
 	}
 	s.closed = true
+	// Drop the backend so any future guard-bypass fails fast (nil deref)
+	// instead of silently using a closed backend. The four op methods
+	// already return ErrStoreClosed before touching s.be, and Backend()
+	// reads s.kind/s.src, so this is safe today and defensive for later.
+	s.be = nil
 	return nil
 }
 

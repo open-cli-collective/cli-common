@@ -272,6 +272,34 @@ func TestMemoryBackendClosedPaths(t *testing.T) {
 	}
 }
 
+func TestMemoryBackendConcurrentSet(t *testing.T) {
+	// Drive memoryBackend.set concurrently *without* Store.mu so the
+	// backend's own b.mu is genuinely contended — the path later units
+	// will exercise when backends gain direct callers.
+	b := newMemoryBackend()
+	const n = 64
+	var successes, exists int64
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			switch err := b.set("p/k", "v", false); {
+			case err == nil:
+				atomic.AddInt64(&successes, 1)
+			case errors.Is(err, ErrExists):
+				atomic.AddInt64(&exists, 1)
+			default:
+				t.Errorf("unexpected backend set err: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if successes != 1 || exists != n-1 {
+		t.Fatalf("contended backend set: successes=%d exists=%d, want 1 and %d", successes, exists, n-1)
+	}
+}
+
 func TestConcurrentSetGet(t *testing.T) {
 	s := openMem(t)
 	_ = s.Set("default", "k", "seed")
