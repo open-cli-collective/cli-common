@@ -16,8 +16,10 @@ import (
 //
 //	Written   – writes retained on return (bare keys, sorted)
 //	Restored  – pre-existing keys put back to their prior value by rollback
-//	Deleted   – new keys the rollback guarantees absent (includes a key
-//	            whose own forward write failed and so was never stored)
+//	Absent    – new keys the rollback guarantees are not present; includes
+//	            a key whose own forward write failed and so was never
+//	            stored (named "Absent", not "Deleted", because no physical
+//	            deletion necessarily occurred for such a key)
 //	Untouched – target keys not changed by this call: a failed
 //	            no-overwrite ErrExists key (left as the racer wrote it)
 //	            plus keys never attempted after the failure point
@@ -26,7 +28,7 @@ import (
 type Result struct {
 	Written   []string
 	Restored  []string
-	Deleted   []string
+	Absent    []string
 	Untouched []string
 }
 
@@ -202,7 +204,9 @@ func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) 
 		written = append(written, k)
 	}
 	if writeErr == nil {
-		return Result{Written: append([]string(nil), keys...)}, nil
+		// `written` already holds every key (all writes succeeded, sorted
+		// order) — use it directly rather than re-deriving from the input.
+		return Result{Written: written}, nil
 	}
 
 	// Roll back. Only a no-overwrite ErrExists means a racer owns
@@ -230,17 +234,17 @@ func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) 
 			// New key (no prior value). Tolerate ErrNotFound: a key whose
 			// forward write itself failed was never stored, but rolling it
 			// back still means "ensured absent", so it is reported in
-			// Deleted — Deleted is the set of keys the rollback guarantees
-			// are not present, not strictly keys that physically existed.
+			// Absent — the set of keys the rollback guarantees are not
+			// present, not strictly keys that physically existed.
 			if err := s.be.delete(itemKey[k]); err != nil && !errors.Is(err, ErrNotFound) {
 				rbFailed = append(rbFailed, k)
 				continue
 			}
-			res.Deleted = append(res.Deleted, k)
+			res.Absent = append(res.Absent, k)
 		}
 	}
 	sort.Strings(res.Restored)
-	sort.Strings(res.Deleted)
+	sort.Strings(res.Absent)
 
 	attempted := make(map[string]bool, len(written)+1)
 	for _, k := range written {

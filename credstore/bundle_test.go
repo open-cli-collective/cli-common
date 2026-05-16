@@ -125,7 +125,7 @@ func TestSetBundleHappyPath(t *testing.T) {
 		t.Fatalf("SetBundle: %v", err)
 	}
 	eqStrings(t, "Written", res.Written, []string{"a", "b", "c"})
-	if res.Restored != nil || res.Deleted != nil || res.Untouched != nil {
+	if res.Restored != nil || res.Absent != nil || res.Untouched != nil {
 		t.Fatalf("non-Written fields should be nil on success: %+v", res)
 	}
 	for k, want := range map[string]string{"a": "1", "b": "2", "c": "3"} {
@@ -165,6 +165,9 @@ func TestSetBundleNoOverwriteConflict(t *testing.T) {
 	if v, _ := s.Get("default", "exists"); v != "old" {
 		t.Fatalf("existing key mutated: %q", v)
 	}
+	if v, _ := s.Get("default", "also"); v != "old2" {
+		t.Fatalf("second existing key mutated: %q", v)
+	}
 	if ok, _ := s.Exists("default", "fresh"); ok {
 		t.Fatal("fresh key written despite conflict gate")
 	}
@@ -198,7 +201,7 @@ func TestSetBundleRollbackNewKeysDeleted(t *testing.T) {
 	if res.Written != nil {
 		t.Fatalf("Written must be nil after full rollback: %+v", res)
 	}
-	eqStrings(t, "Deleted", res.Deleted, []string{"a", "b", "c"})
+	eqStrings(t, "Absent", res.Absent, []string{"a", "b", "c"})
 	for _, k := range []string{"a", "b", "c"} {
 		if ok, _ := s.Exists("default", k); ok {
 			t.Fatalf("key %q survived rollback", k)
@@ -221,12 +224,47 @@ func TestSetBundleRollbackRestoresPriorValues(t *testing.T) {
 		t.Fatal("expected mid-bundle failure")
 	}
 	eqStrings(t, "Restored", res.Restored, []string{"a"})
-	eqStrings(t, "Deleted", res.Deleted, []string{"b", "c"})
+	eqStrings(t, "Absent", res.Absent, []string{"b", "c"})
 	if v, _ := s.Get("default", "a"); v != "ORIG" {
 		t.Fatalf("a not restored to prior value: %q (snapshot must capture pre-write state)", v)
 	}
 	if ok, _ := s.Exists("default", "b"); ok {
 		t.Fatal("new key b not rolled back")
+	}
+}
+
+func TestSetBundleAllRestoreRollback(t *testing.T) {
+	// Every target key pre-exists, so rollback is pure restore (no
+	// delete/Absent). The forward write of "c" fails on its first call;
+	// the hook lets c's *restore* (second call) through — the
+	// distinguish-by-call pattern the setHook doc prescribes.
+	s := openMem(t)
+	mustSet(t, s, "default", "a", "OA")
+	mustSet(t, s, "default", "b", "OB")
+	mustSet(t, s, "default", "c", "OC")
+	calls := 0
+	memOf(t, s).setHook = func(ik string) error {
+		if ik == "default/c" {
+			calls++
+			if calls == 1 {
+				return errors.New("forward boom")
+			}
+		}
+		return nil
+	}
+	res, err := s.SetBundle("default",
+		map[string]string{"a": "NA", "b": "NB", "c": "NC"}, WithOverwrite())
+	if err == nil {
+		t.Fatal("expected mid-bundle failure")
+	}
+	eqStrings(t, "Restored", res.Restored, []string{"a", "b", "c"})
+	if res.Absent != nil || res.Written != nil {
+		t.Fatalf("pure-restore rollback: Absent/Written must be nil: %+v", res)
+	}
+	for k, want := range map[string]string{"a": "OA", "b": "OB", "c": "OC"} {
+		if v, _ := s.Get("default", k); v != want {
+			t.Fatalf("Get(%q) = %q, want prior %q", k, v, want)
+		}
 	}
 }
 
@@ -245,7 +283,7 @@ func TestSetBundleErrExistsRacerNotTouched(t *testing.T) {
 	}
 	// b is the racer's — must not be deleted/restored; only our own
 	// write (a) is rolled back. b and the never-attempted c are Untouched.
-	eqStrings(t, "Deleted", res.Deleted, []string{"a"})
+	eqStrings(t, "Absent", res.Absent, []string{"a"})
 	eqStrings(t, "Untouched", res.Untouched, []string{"b", "c"})
 	if res.Written != nil {
 		t.Fatalf("Written must be nil: %+v", res)
@@ -278,12 +316,22 @@ func TestSetBundleRollbackFailureSurfaced(t *testing.T) {
 		t.Fatalf("error must surface rollback failure + affected key: %v", err)
 	}
 	// b was never written (set failed) so it rolls back via delete →
-	// ErrNotFound tolerated → reported Deleted; a's rollback failed.
-	eqStrings(t, "Deleted", res.Deleted, []string{"b"})
+	// ErrNotFound tolerated → reported Absent; a's rollback failed.
+	eqStrings(t, "Absent", res.Absent, []string{"b"})
+	if res.Restored != nil || res.Untouched != nil {
+		t.Fatalf("only Absent should be populated here: %+v", res)
+	}
+	// The advertised inconsistency: a was written then its rollback
+	// delete failed, so a is leaked — it must still be present.
+	if ok, _ := s.Exists("default", "a"); !ok {
+		t.Fatal("key 'a' should remain present after its rollback delete failed (the surfaced inconsistency)")
+	}
 }
 
 func TestSetBundleAllowlistEnforced(t *testing.T) {
 	s := openMem(t, "a", "b")
+
+	// Rejection path: a disallowed sibling blocks the whole bundle.
 	res, err := s.SetBundle("default", map[string]string{"a": "1", "x": "2"})
 	if !errors.Is(err, ErrKeyNotAllowed) {
 		t.Fatalf("err = %v, want ErrKeyNotAllowed", err)
@@ -294,6 +342,14 @@ func TestSetBundleAllowlistEnforced(t *testing.T) {
 	if ok, _ := s.Exists("default", "a"); ok {
 		t.Fatal("no key may be written when a sibling is disallowed (validation precedes all writes)")
 	}
+
+	// Acceptance path: all keys allowed → success (guards against a bug
+	// that gates writes whenever an allowlist is configured).
+	res, err = s.SetBundle("default", map[string]string{"a": "1", "b": "2"})
+	if err != nil {
+		t.Fatalf("SetBundle with all-allowed keys: %v", err)
+	}
+	eqStrings(t, "Written", res.Written, []string{"a", "b"})
 }
 
 func TestBundleOpsClosed(t *testing.T) {
