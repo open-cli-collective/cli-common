@@ -48,7 +48,13 @@ func NewRedactor(secrets ...string) *Redactor {
 // refreshed token). An empty secret is ignored rather than rejected:
 // there is no error return, and an empty string would match everywhere
 // (strings.Contains(x, "") is always true), corrupting all output. A
-// secret already loaded is a no-op.
+// secret already loaded is a no-op (linear-scan dedup).
+//
+// The secret set is expected to be small and bounded — the handful of
+// values a CLI loaded from the keyring plus the occasional refresh — so
+// the O(n) dedup scan is intentionally not replaced with a map and the
+// list is intentionally uncapped. A caller that adds unbounded distinct
+// secrets in a loop is misusing the type.
 func (r *Redactor) Add(secret string) {
 	if secret == "" {
 		return
@@ -132,10 +138,17 @@ func safeReplacement(n int, secrets []string) string {
 // empty string can contain no non-empty secret, so the result is
 // guaranteed secret-free; normal token secrets never hit either layer.
 func (r *Redactor) Redact(s string) string {
+	return redactWith(s, r.snapshot())
+}
+
+// redactWith is the snapshot-free core of Redact. RedactHeaders takes one
+// snapshot at entry and threads it through both the always-redact and
+// per-value paths so a single invocation cannot straddle two different
+// secret sets under a concurrent Add.
+func redactWith(s string, secrets []string) string {
 	if s == "" {
 		return s
 	}
-	secrets := r.snapshot()
 	if len(secrets) == 0 {
 		return s
 	}
@@ -221,7 +234,7 @@ func (r *Redactor) RedactHeaders(h http.Header) {
 	if h == nil {
 		return
 	}
-	secrets := r.snapshot()
+	secrets := r.snapshot() // one snapshot threaded through both paths
 	for name, values := range h {
 		if _, force := alwaysRedactHeaders[strings.ToLower(name)]; force {
 			for i, v := range values {
@@ -230,7 +243,7 @@ func (r *Redactor) RedactHeaders(h http.Header) {
 			continue
 		}
 		for i, v := range values {
-			values[i] = r.Redact(v)
+			values[i] = redactWith(v, secrets)
 		}
 	}
 }
@@ -250,6 +263,12 @@ type redactWriter struct {
 // (buffering a debug stream would itself retain secret bytes and needs a
 // flush contract). Debug / wire loggers write whole records per call,
 // which is the supported case.
+//
+// Fail-closed drop: when Redact suppresses the whole buffer (a degenerate
+// secret/placeholder collision), the wrapper forwards zero bytes and
+// still reports Write success (len(p), nil) — the record is silently
+// dropped rather than emitted unredacted. This is intended security
+// behavior; it only happens for pathological non-token secrets.
 func (r *Redactor) RedactWriter(w io.Writer) io.Writer {
 	return &redactWriter{r: r, w: w}
 }
@@ -270,19 +289,36 @@ func (rw *redactWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// ErrSecretLeaked is the stable identity of the error NoLeakAssertion
+// returns on a leak. errors.Is(err, ErrSecretLeaked) holds regardless of
+// the (fail-closed, possibly empty) message text, so callers keep a
+// programmatic signal even when the human-readable detail is suppressed.
+// This constant is a fixed phrase, not runtime secret material.
+var ErrSecretLeaked = errors.New("credstore: secret material leaked into output")
+
+// leakError carries the fail-closed message while reporting the stable
+// ErrSecretLeaked identity to errors.Is.
+type leakError struct{ msg string }
+
+func (e *leakError) Error() string { return e.msg }
+
+func (e *leakError) Is(target error) bool { return target == ErrSecretLeaked }
+
 // NoLeakAssertion is the test helper backing each CLI's mandatory
-// "no-leak" test (§1.12). It returns a non-nil error when any non-empty
-// secret appears in output, naming each leaked secret by its argument
-// ordinal and length only — never the value, not even a masked prefix
-// (§1.8/§1.12 treat masked secret material as still secret). Empty
-// secrets are skipped. Returns nil when output is clean.
+// "no-leak" test (§1.12). It returns a non-nil error (matching
+// ErrSecretLeaked via errors.Is) when any non-empty secret appears in
+// output, naming each leaked secret by its argument ordinal and length
+// only — never the value, not even a masked prefix (§1.8/§1.12 treat
+// masked secret material as still secret). Empty secrets are skipped.
+// Returns nil when output is clean.
 //
 // The error string is itself fail-closed: the detailed "secret #N
 // (len=K)" wording can contain a short or placeholder-shaped secret
 // (a secret of "len", "1", or "secret" is a substring of the message),
 // so the message is degraded to a guaranteed secret-free form — finally
-// the empty string — before being returned. A leak still surfaces as a
-// non-nil error; it just never echoes the value in the failure path.
+// the empty string — before being returned. The leak still surfaces as a
+// non-nil error matching ErrSecretLeaked; it just never echoes the value
+// in the failure path.
 func NoLeakAssertion(output []byte, secrets ...string) error {
 	var leaked []string
 	var nonEmpty []string
@@ -299,7 +335,7 @@ func NoLeakAssertion(output []byte, secrets ...string) error {
 		return nil
 	}
 	msg := "credstore: secret material leaked into output: " + strings.Join(leaked, ", ")
-	return errors.New(safeErrorText(msg, nonEmpty))
+	return &leakError{msg: safeErrorText(msg, nonEmpty)}
 }
 
 // safeErrorText returns msg unless a loaded secret is a substring of it,

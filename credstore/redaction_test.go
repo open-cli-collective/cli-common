@@ -283,6 +283,9 @@ func TestNoLeakAssertion(t *testing.T) {
 	if err == nil {
 		t.Fatal("leak not detected")
 	}
+	if !errors.Is(err, ErrSecretLeaked) {
+		t.Fatalf("leak error must match ErrSecretLeaked, got %v", err)
+	}
 	msg := err.Error()
 	if strings.Contains(msg, canary) {
 		t.Fatalf("error must NOT contain the secret value: %q", msg)
@@ -314,6 +317,10 @@ func TestNoLeakAssertion(t *testing.T) {
 		e := NoLeakAssertion([]byte("here is "+tc.sec+" leaking"), tc.sec)
 		if e == nil {
 			t.Fatalf("%q: leak not detected (error must stay non-nil)", tc.sec)
+		}
+		// Stable identity holds even when the message is suppressed to "".
+		if !errors.Is(e, ErrSecretLeaked) {
+			t.Fatalf("%q: error must match ErrSecretLeaked, got %v", tc.sec, e)
 		}
 		if strings.Contains(e.Error(), tc.sec) {
 			t.Fatalf("%q: error echoes the secret value: %q", tc.sec, e.Error())
