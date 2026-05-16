@@ -29,6 +29,8 @@ func TestOpenBackendSelection(t *testing.T) {
 		{"nil opts fails closed", "svc", nil, ErrBackendNotImplemented},
 		{"unset backend fails closed", "svc", &Options{}, ErrBackendNotImplemented},
 		{"keychain not implemented", "svc", &Options{Backend: BackendKeychain}, ErrBackendNotImplemented},
+		{"wincred not implemented", "svc", &Options{Backend: BackendWinCred}, ErrBackendNotImplemented},
+		{"secret-service not implemented", "svc", &Options{Backend: BackendSecretService}, ErrBackendNotImplemented},
 		{"file not implemented", "svc", &Options{Backend: BackendFile}, ErrBackendNotImplemented},
 		{"unknown backend", "svc", &Options{Backend: Backend("bogus")}, ErrBackendNotImplemented},
 		{"empty service", "", &Options{Backend: BackendMemory}, ErrRefEmpty},
@@ -52,10 +54,22 @@ func TestOpenBackendSelection(t *testing.T) {
 }
 
 func TestOpenInvalidAllowedKey(t *testing.T) {
-	_, err := Open("svc", &Options{Backend: BackendMemory, AllowedKeys: []string{"ok", "bad key"}})
-	var re *RefError
-	if !errors.As(err, &re) || re.Segment != "key" {
-		t.Fatalf("Open with invalid allowed key: err = %v, want *RefError Segment=key", err)
+	cases := []struct {
+		name string
+		keys []string
+		kind RefErrorKind
+	}{
+		{"invalid char", []string{"ok", "bad key"}, RefErrorInvalidChar},
+		{"empty string", []string{""}, RefErrorEmpty},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := Open("svc", &Options{Backend: BackendMemory, AllowedKeys: c.keys})
+			var re *RefError
+			if !errors.As(err, &re) || re.Segment != "key" || re.Kind != c.kind {
+				t.Fatalf("Open: err = %v, want *RefError Segment=key Kind=%v", err, c.kind)
+			}
+		})
 	}
 }
 
@@ -170,13 +184,17 @@ func TestSyntaxErrors(t *testing.T) {
 	// joinItemKey, so all four entry points must reject bad refs.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ops := map[string]func() error{
-				"Set":    func() error { return s.Set(c.profile, c.key, "v") },
-				"Get":    func() error { _, e := s.Get(c.profile, c.key); return e },
-				"Delete": func() error { return s.Delete(c.profile, c.key) },
-				"Exists": func() error { _, e := s.Exists(c.profile, c.key); return e },
+			ops := []struct {
+				name string
+				fn   func() error
+			}{
+				{"Set", func() error { return s.Set(c.profile, c.key, "v") }},
+				{"Get", func() error { _, e := s.Get(c.profile, c.key); return e }},
+				{"Delete", func() error { return s.Delete(c.profile, c.key) }},
+				{"Exists", func() error { _, e := s.Exists(c.profile, c.key); return e }},
 			}
-			for op, fn := range ops {
+			for _, o := range ops {
+				op, fn := o.name, o.fn
 				err := fn()
 				var re *RefError
 				if !errors.As(err, &re) {
@@ -276,6 +294,10 @@ func TestConcurrentSetGet(t *testing.T) {
 	wg.Wait()
 }
 
+// Validates the observable no-overwrite contract under contention at the
+// Store level (exactly one success). Note: Store.mu serializes ops before
+// the backend, so this does not exercise the backend's own lock — that
+// defensive layer is covered structurally, not by this test.
 func TestAtomicPreWriteUnderContention(t *testing.T) {
 	s := openMem(t)
 	const n = 64

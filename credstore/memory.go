@@ -75,6 +75,9 @@ func (b *memoryBackend) exists(itemKey string) (bool, error) {
 func (b *memoryBackend) close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.m == nil { // already closed — explicit for clarity/idempotency
+		return nil
+	}
 	for k := range b.m {
 		b.m[k] = ""
 	}

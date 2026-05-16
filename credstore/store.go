@@ -232,8 +232,16 @@ func (s *Store) Close() error {
 	if s.closed {
 		return nil
 	}
+	// Close the backend first; only mark the store closed on success. A
+	// future OS backend whose close() fails must not leave the store in a
+	// terminal ErrStoreClosed state with leaked resources and no retry
+	// path. The in-memory backend always succeeds, so this is purely
+	// forward-compat hardening.
+	if err := s.be.close(); err != nil {
+		return err
+	}
 	s.closed = true
-	return s.be.close()
+	return nil
 }
 
 // Get returns the value at (profile, key). Missing entry → ErrNotFound.
