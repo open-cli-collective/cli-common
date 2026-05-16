@@ -19,6 +19,12 @@ func openMem(t *testing.T, allowed ...string) *Store {
 }
 
 func TestOpenBackendSelection(t *testing.T) {
+	// OS-backend selection precedence is covered exhaustively (and
+	// deterministically) by select_test.go; the file backend round-trip
+	// by osbackend_test.go. Here we only assert Open's contract: memory
+	// succeeds and reports SourceExplicit, an unrecognized backend via
+	// any caller-supplied source fails closed, and service syntax is
+	// validated before backend work.
 	tests := []struct {
 		name    string
 		service string
@@ -26,13 +32,8 @@ func TestOpenBackendSelection(t *testing.T) {
 		wantErr error // sentinel; nil = success
 	}{
 		{"memory ok", "test-service", &Options{Backend: BackendMemory}, nil},
-		{"nil opts fails closed", "svc", nil, ErrBackendNotImplemented},
-		{"unset backend fails closed", "svc", &Options{}, ErrBackendNotImplemented},
-		{"keychain not implemented", "svc", &Options{Backend: BackendKeychain}, ErrBackendNotImplemented},
-		{"wincred not implemented", "svc", &Options{Backend: BackendWinCred}, ErrBackendNotImplemented},
-		{"secret-service not implemented", "svc", &Options{Backend: BackendSecretService}, ErrBackendNotImplemented},
-		{"file not implemented", "svc", &Options{Backend: BackendFile}, ErrBackendNotImplemented},
-		{"unknown backend", "svc", &Options{Backend: Backend("bogus")}, ErrBackendNotImplemented},
+		{"unknown explicit backend fails closed", "svc", &Options{Backend: Backend("bogus")}, ErrBackendNotImplemented},
+		{"unknown config backend fails closed", "svc", &Options{ConfigBackend: Backend("nope")}, ErrBackendNotImplemented},
 		{"empty service", "", &Options{Backend: BackendMemory}, ErrRefEmpty},
 		{"invalid service", "bad.svc", &Options{Backend: BackendMemory}, ErrRefInvalidChar},
 	}
@@ -47,6 +48,9 @@ func TestOpenBackendSelection(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("Open unexpected err = %v", err)
+			}
+			if b, src := s.Backend(); b != BackendMemory || src != SourceExplicit {
+				t.Fatalf("Backend() = (%v,%v), want (memory,explicit)", b, src)
 			}
 			_ = s.Close()
 		})

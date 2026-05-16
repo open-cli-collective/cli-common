@@ -124,6 +124,12 @@ func (s *Store) DeleteBundle(profile string) ([]string, error) {
 // values are snapshotted before any write so a mid-bundle failure can be
 // rolled back. The call-scoped snapshot is best-effort cleared before
 // return (Go strings cannot be guaranteed zeroized).
+//
+// This contract is exact only for the in-memory backend. On the
+// OS/file backends the underlying library has no compare-and-swap, so
+// the conflict check and rollback are best-effort against a concurrent
+// cross-process writer — practical, not transactional, atomicity
+// (§1.5.1).
 func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) (Result, error) {
 	var so setOptions
 	for _, o := range opts {

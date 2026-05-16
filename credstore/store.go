@@ -6,14 +6,23 @@ package credstore
 // <service>/<profile>/<key> -> ServiceName + <profile>/<key> mapping),
 // and §1.5/§1.5.2 (overwrite semantics, allowed-key enforcement).
 //
-// Only the in-memory backend (memory.go) is wired in this unit. Real OS
-// backends and automatic/env/config selection are a later INT-310 unit;
-// requesting them fails closed (ErrBackendNotImplemented) rather than
-// silently degrading to an in-memory store.
+// Backends: the in-memory backend (memory.go) and the real OS keyrings
+// (osbackend.go: keychain/wincred/secret-service/file) selected per
+// §1.4 (select.go). Selection is fail-closed — an unrecognized backend
+// is an error and memory is never auto-selected, never a silent
+// degradation.
+//
+// Atomicity caveat (§1.5.1): the no-overwrite and SetBundle rollback
+// guarantees are exact only for the in-memory backend. The OS/file
+// backends are best-effort against a concurrent cross-process writer
+// because 99designs/keyring exposes no compare-and-swap; the wrapper
+// achieves practical, not transactional, atomicity.
 
 import (
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -46,10 +55,23 @@ type Options struct {
 	// non-empty, Set and Delete reject any key not in this set. When empty,
 	// only key syntax is validated (useful for tooling/tests).
 	AllowedKeys []string
-	// Backend forces a specific backend. In this unit only BackendMemory
-	// is selectable; any other value (including the zero value) fails
-	// closed with ErrBackendNotImplemented.
+	// Backend, when non-empty, forces a specific backend (highest
+	// precedence, §1.4) and is reported as SourceExplicit. It is still
+	// validated: an unrecognized value fails closed with
+	// ErrBackendNotImplemented.
 	Backend Backend
+	// ConfigBackend is the backend the CLI read from its config file
+	// (keyring.backend). credstore does not parse config; the CLI passes
+	// the value so credstore can apply §1.4 precedence and report
+	// SourceConfig distinctly. Lower precedence than Backend and the
+	// <SERVICE>_KEYRING_BACKEND env var.
+	ConfigBackend Backend
+	// FilePassphrase optionally supplies the encrypted-file backend's
+	// passphrase when the <SERVICE>_KEYRING_PASSPHRASE env var is unset
+	// (e.g. an interactive prompt provided by the CLI). Consulted only
+	// for BackendFile. Nil is fine for headless/CI/tests that set the
+	// env var instead.
+	FilePassphrase func() (string, error)
 }
 
 // Sentinels and typed errors. All are matchable via errors.Is.
@@ -58,6 +80,12 @@ var (
 	ErrExists                = errors.New("credstore: credential already exists (use WithOverwrite to replace)")
 	ErrStoreClosed           = errors.New("credstore: store is closed")
 	ErrBackendNotImplemented = errors.New("credstore: backend not implemented")
+	// ErrFilePassphraseRequired is returned by Open when the file
+	// backend is selected but no passphrase source is available
+	// (neither <SERVICE>_KEYRING_PASSPHRASE nor Options.FilePassphrase).
+	// Fail-closed, §1.4: the error names the env var and never contains
+	// secret material.
+	ErrFilePassphraseRequired = errors.New("credstore: file backend passphrase required")
 )
 
 // KeyError is returned by Set/Delete when a key is not in the Store's
@@ -93,8 +121,10 @@ var ErrKeyNotAllowed = &KeyError{}
 type backend interface {
 	get(itemKey string) (string, error)
 	// set writes value at itemKey. When overwrite is false and an entry
-	// already exists, it returns ErrExists without modifying anything; the
-	// check and write are atomic under the backend's own lock.
+	// already exists, it returns ErrExists without modifying anything.
+	// The memory backend makes the check+write atomic under its own
+	// lock; the OS/file backends have no compare-and-swap, so the guard
+	// is best-effort against a concurrent cross-process writer (§1.5.1).
 	set(itemKey, value string, overwrite bool) error
 	delete(itemKey string) error
 	exists(itemKey string) (bool, error)
@@ -134,29 +164,33 @@ func Open(service string, opts *Options) (*Store, error) {
 		opts = &Options{}
 	}
 
-	switch opts.Backend {
-	case BackendMemory:
-		// ok
-	case BackendKeychain, BackendWinCred, BackendSecretService, BackendFile:
-		return nil, fmt.Errorf("%w: backend %q is not implemented yet; pass Options.Backend = credstore.BackendMemory (OS backends are a later INT-310 unit)", ErrBackendNotImplemented, opts.Backend)
-	case "":
-		return nil, fmt.Errorf("%w: no backend specified; pass Options.Backend = credstore.BackendMemory (OS backend auto-selection is a later INT-310 unit)", ErrBackendNotImplemented)
-	default:
-		return nil, fmt.Errorf("%w: unknown backend %q", ErrBackendNotImplemented, opts.Backend)
-	}
-
 	allowed, allowedList, err := normalizeAllowedKeys(opts.AllowedKeys)
 	if err != nil {
 		return nil, err
 	}
 
+	kind, src, err := selectBackend(service, opts, os.Getenv, runtime.GOOS)
+	if err != nil {
+		return nil, err
+	}
+
+	var be backend
+	if kind == BackendMemory {
+		be = newMemoryBackend()
+	} else {
+		be, err = openOSBackend(kind, service, opts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &Store{
 		service:     service,
-		src:         SourceExplicit,
-		kind:        BackendMemory,
+		src:         src,
+		kind:        kind,
 		allowed:     allowed,
 		allowedList: allowedList,
-		be:          newMemoryBackend(),
+		be:          be,
 	}, nil
 }
 
@@ -221,7 +255,10 @@ type setOptions struct{ overwrite bool }
 type SetOpt func(*setOptions)
 
 // WithOverwrite allows Set to replace an existing entry (§1.5). Without
-// it, Set on an existing entry returns ErrExists.
+// it, Set on an existing entry returns ErrExists. The exists check is
+// exact only for the in-memory backend; on OS/file backends it is
+// best-effort against a concurrent cross-process writer (no CAS in the
+// underlying library, §1.5.1).
 func WithOverwrite() SetOpt { return func(o *setOptions) { o.overwrite = true } }
 
 // Backend reports the selected backend and how it was selected. It is
@@ -273,7 +310,8 @@ func (s *Store) Get(profile, key string) (string, error) {
 }
 
 // Set writes value at (profile, key). Enforces the allowlist (§1.5.2).
-// Without WithOverwrite, an existing entry → ErrExists.
+// Without WithOverwrite, an existing entry → ErrExists (best-effort on
+// OS/file backends; see WithOverwrite).
 func (s *Store) Set(profile, key, value string, opts ...SetOpt) error {
 	var so setOptions
 	for _, o := range opts {
