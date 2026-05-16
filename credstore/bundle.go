@@ -23,13 +23,20 @@ import (
 //	Untouched – target keys not changed by this call: a failed
 //	            no-overwrite ErrExists key (left as the racer wrote it)
 //	            plus keys never attempted after the failure point
+//	RollbackFailed – keys whose rollback step itself failed, so the
+//	            backend's value for them is undefined; the returned error
+//	            also names these, but the slice lets callers remediate
+//	            (e.g. prompt to delete) without parsing error text. A key
+//	            here appears in no other slice.
 //
-// On success only Written is populated; on rollback Written is nil.
+// On success only Written is populated; on rollback Written is nil. A
+// non-empty RollbackFailed always accompanies a non-nil error.
 type Result struct {
-	Written   []string
-	Restored  []string
-	Absent    []string
-	Untouched []string
+	Written        []string
+	Restored       []string
+	Absent         []string
+	Untouched      []string
+	RollbackFailed []string
 }
 
 // validateProfile mirrors joinItemKey's profile checks (§1.3): a profile
@@ -265,6 +272,7 @@ func (s *Store) SetBundle(profile string, kv map[string]string, opts ...SetOpt) 
 
 	if len(rbFailed) > 0 {
 		sort.Strings(rbFailed)
+		res.RollbackFailed = rbFailed
 		return res, fmt.Errorf("credstore: SetBundle(%q): write failed at %q: %w; rollback also failed for %s — keyring may be inconsistent",
 			profile, failedKey, writeErr, strings.Join(rbFailed, ", "))
 	}

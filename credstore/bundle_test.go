@@ -258,8 +258,15 @@ func TestSetBundleAllRestoreRollback(t *testing.T) {
 		t.Fatal("expected mid-bundle failure")
 	}
 	eqStrings(t, "Restored", res.Restored, []string{"a", "b", "c"})
-	if res.Absent != nil || res.Written != nil {
-		t.Fatalf("pure-restore rollback: Absent/Written must be nil: %+v", res)
+	if res.Absent != nil || res.Written != nil || res.RollbackFailed != nil {
+		t.Fatalf("pure-restore rollback: Absent/Written/RollbackFailed must be nil: %+v", res)
+	}
+	// Pin the distinguish-by-call invariant: exactly the forward write
+	// (call 1, failed) and c's rollback restore (call 2) hit the hook. A
+	// future change to rollback iteration order would trip this instead of
+	// silently misbehaving.
+	if calls != 2 {
+		t.Fatalf("setHook on default/c fired %d times, want exactly 2 (forward fail + rollback restore)", calls)
 	}
 	for k, want := range map[string]string{"a": "OA", "b": "OB", "c": "OC"} {
 		if v, _ := s.Get("default", k); v != want {
@@ -316,10 +323,13 @@ func TestSetBundleRollbackFailureSurfaced(t *testing.T) {
 		t.Fatalf("error must surface rollback failure + affected key: %v", err)
 	}
 	// b was never written (set failed) so it rolls back via delete →
-	// ErrNotFound tolerated → reported Absent; a's rollback failed.
+	// ErrNotFound tolerated → reported Absent; a's rollback failed so a is
+	// in RollbackFailed only — never Absent (the continue skips it) and
+	// never Written (rollback path returns Written nil).
 	eqStrings(t, "Absent", res.Absent, []string{"b"})
-	if res.Restored != nil || res.Untouched != nil {
-		t.Fatalf("only Absent should be populated here: %+v", res)
+	eqStrings(t, "RollbackFailed", res.RollbackFailed, []string{"a"})
+	if res.Restored != nil || res.Untouched != nil || res.Written != nil {
+		t.Fatalf("only Absent + RollbackFailed should be populated here: %+v", res)
 	}
 	// The advertised inconsistency: a was written then its rollback
 	// delete failed, so a is leaked — it must still be present.
@@ -350,6 +360,35 @@ func TestSetBundleAllowlistEnforced(t *testing.T) {
 		t.Fatalf("SetBundle with all-allowed keys: %v", err)
 	}
 	eqStrings(t, "Written", res.Written, []string{"a", "b"})
+}
+
+func TestSetBundleInvalidKeyNoWrites(t *testing.T) {
+	// Validate-all-before-any-write applies to key *syntax*, not just the
+	// allowlist (cf. TestSetBundleAllowlistEnforced): one syntactically
+	// invalid sibling fails the whole call with a *RefError and writes
+	// nothing — guards the guarantee against a future refactor.
+	for _, tc := range []struct {
+		name   string
+		kv     map[string]string
+		wantIs error
+	}{
+		{"empty key", map[string]string{"a": "1", "": "2"}, ErrRefEmpty},
+		{"bad char", map[string]string{"a": "1", "bad.key": "2"}, ErrRefInvalidChar},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := openMem(t)
+			res, err := s.SetBundle("default", tc.kv)
+			if !errors.Is(err, tc.wantIs) {
+				t.Fatalf("err = %v, want %v", err, tc.wantIs)
+			}
+			if res.Written != nil {
+				t.Fatalf("nothing written when a key is invalid: %+v", res)
+			}
+			if ok, _ := s.Exists("default", "a"); ok {
+				t.Fatal("no key may be written when a sibling is syntactically invalid (validation precedes all writes)")
+			}
+		})
+	}
 }
 
 func TestBundleOpsClosed(t *testing.T) {
