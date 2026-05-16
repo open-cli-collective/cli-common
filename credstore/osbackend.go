@@ -27,18 +27,18 @@ type osKeyringBackend struct {
 // pinned to the single chosen type so the library never re-prioritizes
 // after our §1.4 selection. The file backend additionally needs a
 // directory and a passphrase source.
-func openOSBackend(kind Backend, service string, opts *Options) (backend, error) {
+func openOSBackend(kind Backend, service string, opts *Options, getenv func(string) string) (backend, error) {
 	cfg := keyring.Config{
 		ServiceName:     service,
 		AllowedBackends: []keyring.BackendType{keyring.BackendType(kind)},
 	}
 	if kind == BackendFile {
-		dir, err := fileKeyringDir(service)
+		dir, err := fileKeyringDir(service, getenv)
 		if err != nil {
 			return nil, err
 		}
 		cfg.FileDir = dir
-		pwFunc, err := filePasswordFunc(service, opts)
+		pwFunc, err := filePasswordFunc(service, opts, getenv)
 		if err != nil {
 			return nil, err
 		}
@@ -58,8 +58,8 @@ func openOSBackend(kind Backend, service string, opts *Options) (backend, error)
 // public Options field is needed for that. Fail-closed: if neither
 // XDG_DATA_HOME nor a home directory resolves, error rather than write
 // an encrypted secret store under the process's working directory.
-func fileKeyringDir(service string) (string, error) {
-	base := os.Getenv("XDG_DATA_HOME")
+func fileKeyringDir(service string, getenv func(string) string) (string, error) {
+	base := getenv("XDG_DATA_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -74,9 +74,9 @@ func fileKeyringDir(service string) (string, error) {
 // <SERVICE>_KEYRING_PASSPHRASE env var (the one sanctioned runtime
 // secret-material env var, §1.4), else opts.FilePassphrase, else
 // fail-closed with an actionable, value-free error.
-func filePasswordFunc(service string, opts *Options) (keyring.PromptFunc, error) {
+func filePasswordFunc(service string, opts *Options, getenv func(string) string) (keyring.PromptFunc, error) {
 	envVar := envServicePrefix(service) + "_KEYRING_PASSPHRASE"
-	if v := os.Getenv(envVar); v != "" {
+	if v := getenv(envVar); v != "" {
 		return keyring.FixedStringPrompt(v), nil
 	}
 	if opts != nil && opts.FilePassphrase != nil {

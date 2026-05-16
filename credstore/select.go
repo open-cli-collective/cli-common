@@ -19,6 +19,9 @@ import (
 // caller-influenced value is validated through parseBackend — even the
 // explicit one is not trusted blindly.
 func selectBackend(service string, opts *Options, getenv func(string) string, goos string) (Backend, Source, error) {
+	if opts == nil {
+		opts = &Options{} // self-defensive; Open already normalizes, but the pure fn must not panic for direct callers
+	}
 	if opts.Backend != "" {
 		b, ok := parseBackend(string(opts.Backend))
 		if !ok {

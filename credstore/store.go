@@ -178,7 +178,7 @@ func Open(service string, opts *Options) (*Store, error) {
 	if kind == BackendMemory {
 		be = newMemoryBackend()
 	} else {
-		be, err = openOSBackend(kind, service, opts)
+		be, err = openOSBackend(kind, service, opts, os.Getenv)
 		if err != nil {
 			return nil, err
 		}

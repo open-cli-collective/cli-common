@@ -150,7 +150,10 @@ func TestFileBackendPassphraseFuncError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	// First write needs the passphrase to encrypt → callback error surfaces.
+	// Assumes 99designs/keyring calls FilePasswordFunc lazily (on first
+	// write, not during Open) — verified against keyring v1.2.2. If a
+	// future version prompts eagerly, Open above would fail instead and
+	// this Set assertion would need to move to the Open call.
 	err = s.Set("default", "tok", "SUPER-SECRET-VALUE", WithOverwrite())
 	if err == nil {
 		t.Fatal("Set must fail when the passphrase callback errors")
@@ -250,6 +253,9 @@ func TestOSKeyringBackendErrorMapping(t *testing.T) {
 		{"get", func(b *osKeyringBackend) error { _, e := b.get("p/k"); return e }, func(f *fakeKeyring) { f.getErr = sentinel }, "get"},
 		{"exists", func(b *osKeyringBackend) error { _, e := b.exists("p/k"); return e }, func(f *fakeKeyring) { f.getErr = sentinel }, "exists"},
 		{"set", func(b *osKeyringBackend) error { return b.set("p/k", "v", true) }, func(f *fakeKeyring) { f.setErr = sentinel }, "set"},
+		// !overwrite + a non-not-found Get error hits the pre-check
+		// default arm (distinct from the overwrite=true write path above).
+		{"set pre-check", func(b *osKeyringBackend) error { return b.set("p/k", "v", false) }, func(f *fakeKeyring) { f.getErr = sentinel }, "set"},
 		{"delete", func(b *osKeyringBackend) error { return b.delete("p/k") }, func(f *fakeKeyring) { f.delErr = sentinel }, "delete"},
 		{"listKeys", func(b *osKeyringBackend) error { _, e := b.listKeys(); return e }, func(f *fakeKeyring) { f.keysErr = sentinel }, "listKeys"},
 	} {
@@ -292,6 +298,11 @@ func TestOpenEnvSelectsFileBackend(t *testing.T) {
 	if err := s.Set("default", "tok", "v", WithOverwrite()); err != nil {
 		t.Fatalf("Set via env-selected file backend: %v", err)
 	}
+	// Roundtrip: prove the env-selected backend is functional, not just
+	// labeled correctly.
+	if got, err := s.Get("default", "tok"); err != nil || got != "v" {
+		t.Fatalf("Get via env-selected file backend = (%q,%v), want (v,nil)", got, err)
+	}
 }
 
 // TestOSKeyringBackendsGated covers the macOS/wincred/secret-service
@@ -313,6 +324,10 @@ func TestOSKeyringBackendsGated(t *testing.T) {
 		t.Fatalf("src = %q, want auto", src)
 	}
 	t.Logf("auto-selected OS backend: %s", b)
+
+	// Remove the credential even if a later assertion fails, so the test
+	// never leaves an entry behind in the real OS keyring.
+	t.Cleanup(func() { _ = s.Delete("default", "tok") })
 
 	if err := s.Set("default", "tok", "v", WithOverwrite()); err != nil {
 		t.Fatalf("Set: %v", err)
