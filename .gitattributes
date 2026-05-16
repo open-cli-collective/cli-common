@@ -1,0 +1,7 @@
+# Normalize all text to LF in the working tree on every platform. Without
+# this, Windows CI checks out CRLF (autocrlf) while `go mod tidy` / gofmt
+# write LF, making the tree look dirty on windows-latest.
+* text=auto eol=lf
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
