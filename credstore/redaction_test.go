@@ -99,6 +99,9 @@ func TestRedactPlaceholderCollisionFailsClosed(t *testing.T) {
 		{"secret + placeholder-substring secret", []string{"token-value", "len"}, "token-value"},
 		{"numeric secret colliding with len=N", []string{"11"}, "abcdefghijk"}, // len 11 → "len=11"
 		{"angle bracket secret", []string{">"}, "a>b>c"},
+		// A dropped colliding span lets gap text join into a *different*
+		// loaded secret across the seam: "a"+""+"b" == "ab".
+		{"seam join forms another secret", []string{"X", "len", "ab"}, "aXb"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

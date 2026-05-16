@@ -92,17 +92,18 @@ func containsAnySecret(s string, secrets []string) bool {
 	return false
 }
 
-// safeReplacement is the fail-closed replacement for a redacted span. It
-// is normally the standard "<redacted, len=N>" placeholder — but that
-// literal itself contains the substrings "redacted", "len", and the
-// decimal N, so a loaded secret equal to e.g. "len", "redacted", or a
-// digit string would be reintroduced verbatim by the placeholder and
-// leak (§1.12). When that would happen the span is dropped to the empty
-// string instead: maximal over-redaction, which can contain no non-empty
-// secret. Surrounding gap text is provably secret-free (every secret
-// occurrence is inside some interval), so the assembled output is
-// guaranteed to contain no loaded secret. Normal token secrets never
-// collide, so the common path always emits the standard placeholder.
+// safeReplacement is the best-effort, context-preserving replacement for
+// a redacted span. It is normally the standard "<redacted, len=N>"
+// placeholder — but that literal itself contains the substrings
+// "redacted", "len", and the decimal N, so a loaded secret equal to e.g.
+// "len", "redacted", or a digit string would be reintroduced verbatim by
+// the placeholder and leak (§1.12). When that would happen the span is
+// dropped to the empty string instead (maximal over-redaction). Normal
+// token secrets never collide, so the common path always emits the
+// standard placeholder. This is per-span only; Redact applies a final
+// whole-output guard (a dropped span can let gap text join into a
+// different loaded secret across the seam), so correctness does not rely
+// on this function alone.
 func safeReplacement(n int, secrets []string) string {
 	rep := redactedPlaceholder(n)
 	if containsAnySecret(rep, secrets) {
@@ -122,11 +123,13 @@ func safeReplacement(n int, secrets []string) string {
 // span length — still only a length, never secret material.
 //
 // Matching against the original input (not iterative replacement) means
-// the result is order-independent. If the standard placeholder would
-// itself contain a loaded secret (e.g. a secret of "len" or a digit
-// string landing in "len=N"), that span fails closed to the empty string
-// (see safeReplacement) so the placeholder can never reintroduce a
-// secret.
+// the result is order-independent. Two layers keep it fail-closed: a
+// placeholder that would itself contain a loaded secret drops that span
+// to "" (safeReplacement), and a final whole-output guard suppresses the
+// entire result (returns "") if any loaded secret still appears — which
+// can happen when a dropped span lets gap text join across the seam. The
+// empty string can contain no non-empty secret, so the result is
+// guaranteed secret-free; normal token secrets never hit either layer.
 func (r *Redactor) Redact(s string) string {
 	if s == "" {
 		return s
@@ -179,7 +182,19 @@ func (r *Redactor) Redact(s string) string {
 	}
 	flush()
 	b.WriteString(s[prev:])
-	return b.String()
+
+	out := b.String()
+	// Final fail-closed guard. Per-span safeReplacement can drop a
+	// colliding span to "", which may let the two surrounding gap
+	// fragments join into a *different* loaded secret that was not a
+	// contiguous occurrence in the original input (e.g. secrets
+	// {"X","len","ab"} over "aXb" → "a"+""+"b" == "ab"). If anything
+	// loaded still appears, suppress the whole result: "" can contain no
+	// non-empty secret. This never triggers on normal token secrets.
+	if containsAnySecret(out, secrets) {
+		return ""
+	}
+	return out
 }
 
 // alwaysRedactHeaders are unconditionally scrubbed regardless of content
