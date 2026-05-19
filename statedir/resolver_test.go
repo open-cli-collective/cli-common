@@ -52,6 +52,27 @@ func TestScopeConfigDirEnsured_Creates0700(t *testing.T) {
 	}
 }
 
+func TestCacheDirEnsured_Creates0700(t *testing.T) {
+	statedirtest.Hermetic(t)
+
+	dir, err := statedir.Cache{Tool: "nrq"}.CacheDirEnsured()
+	if err != nil {
+		t.Fatalf("CacheDirEnsured: %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat created dir: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q is not a directory", dir)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o700 {
+			t.Fatalf("created cache dir mode = %o, want 0700", perm)
+		}
+	}
+}
+
 func TestCacheDir_PerBinary(t *testing.T) {
 	statedirtest.Hermetic(t)
 

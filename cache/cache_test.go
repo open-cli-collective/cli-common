@@ -83,6 +83,20 @@ func TestMalformedJSONIsError(t *testing.T) {
 	}
 }
 
+func TestReadResource_IOErrorIsNotMiss(t *testing.T) {
+	root := t.TempDir()
+	loc := cache.Locator{Root: root, InstanceKey: "i"}
+	// Make the resource path a directory: os.ReadFile then returns an error
+	// that is NOT os.IsNotExist, exercising the "I/O error, not a miss" path.
+	if err := os.MkdirAll(filepath.Join(root, "i", "r.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := cache.ReadResource[payload](loc, "r")
+	if err == nil || errors.Is(err, cache.ErrCacheMiss) {
+		t.Fatalf("err = %v, want a non-miss I/O error", err)
+	}
+}
+
 func TestAtomicWrite_NoTempLeak_Perms(t *testing.T) {
 	root := t.TempDir()
 	loc := cache.Locator{Root: root, InstanceKey: "inst"}
@@ -144,7 +158,7 @@ func TestInvalidRoot_CreatesNothing(t *testing.T) {
 
 func TestUnsafeComponents(t *testing.T) {
 	root := t.TempDir()
-	bad := []string{"", "..", "a/b", `a\b`, "../escape", ".hidden..x"}
+	bad := []string{"", ".", "..", "a/b", `a\b`, "../escape", ".hidden..x"}
 	for _, v := range bad {
 		t.Run("instance="+v, func(t *testing.T) {
 			loc := cache.Locator{Root: root, InstanceKey: v}
@@ -171,6 +185,7 @@ func TestClassify_OnlyFreshStaleManual(t *testing.T) {
 	}{
 		{"fresh", now.Add(-30 * time.Minute), "1h", cache.StatusFresh},
 		{"elapsed-stale", now.Add(-2 * time.Hour), "1h", cache.StatusStale},
+		{"exact-boundary-stale", now.Add(-1 * time.Hour), "1h", cache.StatusStale},
 		{"zero-time-stale", time.Time{}, "1h", cache.StatusStale},
 		{"manual-sentinel", now, "manual", cache.StatusManual},
 		{"unparseable-ttl-stale", now, "not-a-duration", cache.StatusStale},
