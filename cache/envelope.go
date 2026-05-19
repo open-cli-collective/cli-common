@@ -26,6 +26,12 @@ const Version = 1
 // and populate" signal.
 var ErrCacheMiss = errors.New("cache: miss")
 
+// ErrInstanceMismatch reports that a WriteEnvelope call supplied an envelope
+// whose Instance does not match the Locator's InstanceKey. Writing it would
+// produce a file the next ReadResource immediately rejects as a miss, so the
+// write is refused and nothing is created.
+var ErrInstanceMismatch = errors.New("cache: envelope instance does not match locator")
+
 // Envelope is the on-disk JSON shape for a single cached resource.
 type Envelope[T any] struct {
 	Resource  string    `json:"resource"`
@@ -84,7 +90,28 @@ func WriteResource[T any](loc Locator, name, ttl string, data T) error {
 		Version:   Version,
 		Data:      data,
 	}
-	return atomicWriteEnvelope(loc, name, env)
+	return WriteEnvelope(loc, env)
+}
+
+// WriteEnvelope atomically writes a caller-supplied envelope verbatim:
+// FetchedAt, TTL, and Version are preserved exactly as given (unlike
+// WriteResource, which stamps a fresh FetchedAt/Version). This is the
+// invalidation primitive — e.g. a "stale" marker writes an envelope whose
+// FetchedAt is the zero time and expects that to survive the round-trip.
+//
+// The resource name is taken from env.Resource (so the file the next
+// ReadResource looks up is exactly the one written), and env.Instance MUST
+// equal loc.InstanceKey. Because ReadResource treats a resource/instance
+// mismatch as a miss, WriteEnvelope refuses to write an envelope that the
+// next read would immediately reject: a mismatch returns ErrInstanceMismatch
+// and writes nothing. env.Resource is validated by the shared path guard
+// (ErrInvalidName on an unsafe name).
+func WriteEnvelope[T any](loc Locator, env Envelope[T]) error {
+	if env.Instance != loc.InstanceKey {
+		return fmt.Errorf("%w: envelope instance %q != locator instance %q",
+			ErrInstanceMismatch, env.Instance, loc.InstanceKey)
+	}
+	return atomicWriteEnvelope(loc, env.Resource, env)
 }
 
 // atomicWriteEnvelope marshals env and writes it to the cache path for name
