@@ -46,6 +46,10 @@ func validateComponent(kind, v string) error {
 		return fmt.Errorf("%w: %s %q contains a path separator", ErrInvalidName, kind, v)
 	case strings.Contains(v, ".."):
 		return fmt.Errorf("%w: %s %q contains %q", ErrInvalidName, kind, v, "..")
+	case strings.HasSuffix(v, "."):
+		// Windows (NTFS/FAT) silently strips a trailing dot, so "foo." and
+		// "foo" would resolve to the same dir on one OS but not another.
+		return fmt.Errorf("%w: %s %q has a trailing dot", ErrInvalidName, kind, v)
 	}
 	return nil
 }

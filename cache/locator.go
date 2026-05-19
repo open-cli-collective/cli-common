@@ -25,8 +25,14 @@ var (
 // hostname derived from config).
 var safeComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-]*$`)
 
+// validComponent also rejects a ".." substring (traversal) and a trailing dot.
+// A trailing dot matters cross-OS: Windows (NTFS/FAT) silently strips it, so
+// "foo." and "foo" would resolve to the same directory and two distinct
+// instance keys could collide.
 func validComponent(s string) bool {
-	return safeComponent.MatchString(s) && !strings.Contains(s, "..")
+	return safeComponent.MatchString(s) &&
+		!strings.Contains(s, "..") &&
+		!strings.HasSuffix(s, ".")
 }
 
 // Locator is the injected cache location. The cache library is

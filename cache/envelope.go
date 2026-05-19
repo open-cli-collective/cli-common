@@ -47,9 +47,9 @@ func ReadResource[T any](loc Locator, name string) (Envelope[T], error) {
 		return Envelope[T]{}, err
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // path is composed from an injected Locator + regex-validated components, not user input
+	data, err := os.ReadFile(path) //nolint:gosec // path already validated + composed by Locator.resourceFile (Root absolute, components regex-checked)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return Envelope[T]{}, ErrCacheMiss
 		}
 		return Envelope[T]{}, fmt.Errorf("cache: reading resource file: %w", err)
@@ -60,7 +60,10 @@ func ReadResource[T any](loc Locator, name string) (Envelope[T], error) {
 		return Envelope[T]{}, fmt.Errorf("cache: parsing resource file: %w", err)
 	}
 
-	if env.Version != Version {
+	// Version or identity mismatch ⇒ treat as a miss (same self-healing rule):
+	// a hand-edited or misplaced file whose metadata disagrees with the key it
+	// was read under must not be returned as if it were that resource.
+	if env.Version != Version || env.Resource != name || env.Instance != loc.InstanceKey {
 		return Envelope[T]{}, ErrCacheMiss
 	}
 	return env, nil

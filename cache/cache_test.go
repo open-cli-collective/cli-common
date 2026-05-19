@@ -67,6 +67,24 @@ func TestVersionMismatchIsMiss(t *testing.T) {
 	}
 }
 
+func TestIdentityMismatchIsMiss(t *testing.T) {
+	root := t.TempDir()
+	loc := cache.Locator{Root: root, InstanceKey: "host-a"}
+	dir := filepath.Join(root, "host-a")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Correct version + path, but the envelope's own metadata names a
+	// different resource/instance (misplaced or hand-edited file).
+	raw := `{"resource":"OTHER","instance":"host-b","fetched_at":"2026-01-01T00:00:00Z","ttl":"1h","version":1,"data":{"name":"x","n":1}}`
+	if err := os.WriteFile(filepath.Join(dir, "r.json"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.ReadResource[payload](loc, "r"); !errors.Is(err, cache.ErrCacheMiss) {
+		t.Fatalf("err = %v, want ErrCacheMiss on identity mismatch", err)
+	}
+}
+
 func TestMalformedJSONIsError(t *testing.T) {
 	root := t.TempDir()
 	loc := cache.Locator{Root: root, InstanceKey: "i"}
@@ -158,7 +176,7 @@ func TestInvalidRoot_CreatesNothing(t *testing.T) {
 
 func TestUnsafeComponents(t *testing.T) {
 	root := t.TempDir()
-	bad := []string{"", ".", "..", "a/b", `a\b`, "../escape", ".hidden..x"}
+	bad := []string{"", ".", "..", "a..b", "a/b", `a\b`, "../escape", ".hidden..x", "trailingdot."}
 	for _, v := range bad {
 		t.Run("instance="+v, func(t *testing.T) {
 			loc := cache.Locator{Root: root, InstanceKey: v}

@@ -102,7 +102,7 @@ func TestCacheDir_PerBinary(t *testing.T) {
 func TestInvalidNames(t *testing.T) {
 	statedirtest.Hermetic(t)
 
-	bad := []string{"", ".", "..", "a/b", `a\b`, "a..b", "../escape", string(os.PathSeparator)}
+	bad := []string{"", ".", "..", "a/b", `a\b`, "a..b", "../escape", "trailingdot.", string(os.PathSeparator)}
 	for _, name := range bad {
 		t.Run("scope="+name, func(t *testing.T) {
 			if _, err := (statedir.Scope{Name: name}).ConfigDir(); !errors.Is(err, statedir.ErrInvalidName) {
