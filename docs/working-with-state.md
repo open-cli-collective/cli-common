@@ -355,7 +355,14 @@ act* — done together (not two horizontal sweeps).
 
 1. **Build the `cli-common` state components first** (§5a resolver + §5a
    7-var test helper + §5b tier-1 cache core). Nothing ports until this
-   exists.
+   exists. **DELIVERED 2026-05-19 (MON-5364):** `cli-common/statedir`
+   (`Scope`/`Cache` resolver, create-vs-no-create split, `LegacySource`
+   seam), `cli-common/statedirtest` (the 7-var `Hermetic` helper), and
+   `cli-common/cache` (directory-agnostic `Envelope[T]`,
+   `ReadResource[T]`/`WriteResource[T]`, atomic write,
+   version-mismatch-as-miss,
+   `Classify`/`Age`/`Status`, injected `Locator`). No CLI ported yet; no
+   INT-310 tag cut (the §5 release-train guardrail is unaffected).
 2. **Port one unit at a time** (unit per §6.4 = a CLI / a credential scope /
    a cache-only surface). A unit is *one PR* but **decomposed into separate,
    independently-reviewable commits, each with its own acceptance
