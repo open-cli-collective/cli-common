@@ -6,11 +6,20 @@ Shared libraries for the Open CLI Collective CLIs.
 
 `github.com/open-cli-collective/cli-common/credstore` is the shared
 credential-store library. It implements the **Open CLI Collective
-Secret-Handling Standard** (`working-with-secrets.md`), the source of truth
-for how Collective CLIs handle secrets and credentials.
+Secret-Handling Standard** ([`docs/working-with-secrets.md`](docs/working-with-secrets.md)),
+the source of truth for how Collective CLIs handle secrets and credentials.
 
-The standard is maintained outside this repository and is not published;
-this README references it by name and section number rather than by link.
+## Standards
+
+The Collective's cross-CLI standards are versioned here, alongside the code
+they govern, so consumers pin them with the same module version:
+
+- [`docs/working-with-secrets.md`](docs/working-with-secrets.md) — secret
+  state (OS keyring; implemented by `credstore`).
+- [`docs/working-with-state.md`](docs/working-with-state.md) — **non-secret**
+  on-disk state (config + cache) and its rollout plan; companion pillar to
+  the secrets standard.
+
 Tracking: epic **INT-310** (Get Claude desktop working for people).
 
 ### Status
