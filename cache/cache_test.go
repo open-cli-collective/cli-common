@@ -259,3 +259,73 @@ func TestAge(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteEnvelope_VerbatimPreservation(t *testing.T) {
+	loc := cache.Locator{Root: t.TempDir(), InstanceKey: "host-x"}
+
+	// A zero FetchedAt is the "stale marker" invalidation case — it must
+	// survive the round-trip exactly (WriteResource would re-stamp it).
+	env := cache.Envelope[payload]{
+		Resource:  "fields",
+		Instance:  "host-x",
+		FetchedAt: time.Time{},
+		TTL:       "1h",
+		Version:   cache.Version,
+		Data:      payload{Name: "f", N: 3},
+	}
+	if err := cache.WriteEnvelope(loc, env); err != nil {
+		t.Fatalf("WriteEnvelope: %v", err)
+	}
+	got, err := cache.ReadResource[payload](loc, "fields")
+	if err != nil {
+		t.Fatalf("ReadResource after WriteEnvelope: %v (must not be a self-inflicted miss)", err)
+	}
+	if !got.FetchedAt.IsZero() {
+		t.Fatalf("FetchedAt not preserved verbatim: got %v, want zero", got.FetchedAt)
+	}
+	if got.TTL != "1h" || got.Data != env.Data || got.Resource != "fields" || got.Instance != "host-x" {
+		t.Fatalf("envelope not preserved verbatim: %+v", got)
+	}
+}
+
+func TestWriteEnvelope_InstanceMismatchWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	loc := cache.Locator{Root: root, InstanceKey: "host-a"}
+	env := cache.Envelope[payload]{
+		Resource: "r", Instance: "host-b", TTL: "1h", Version: cache.Version,
+		Data: payload{Name: "x", N: 1},
+	}
+	if err := cache.WriteEnvelope(loc, env); !errors.Is(err, cache.ErrInstanceMismatch) {
+		t.Fatalf("err = %v, want ErrInstanceMismatch", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, "host-a")); len(entries) != 0 {
+		t.Fatalf("WriteEnvelope wrote files despite instance mismatch: %v", entries)
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Fatalf("WriteEnvelope created paths despite instance mismatch: %v", entries)
+	}
+}
+
+func TestWriteEnvelope_UnsafeResourceName(t *testing.T) {
+	loc := cache.Locator{Root: t.TempDir(), InstanceKey: "i"}
+	env := cache.Envelope[payload]{Resource: "../escape", Instance: "i", TTL: "1h", Version: cache.Version}
+	if err := cache.WriteEnvelope(loc, env); !errors.Is(err, cache.ErrInvalidName) {
+		t.Fatalf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestWriteResource_StillStampsFetchedAt(t *testing.T) {
+	// Regression: WriteResource now delegates to WriteEnvelope but must still
+	// stamp a fresh non-zero FetchedAt (its existing contract is unchanged).
+	loc := cache.Locator{Root: t.TempDir(), InstanceKey: "i"}
+	if err := cache.WriteResource(loc, "r", "1h", payload{Name: "a", N: 1}); err != nil {
+		t.Fatalf("WriteResource: %v", err)
+	}
+	got, err := cache.ReadResource[payload](loc, "r")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	if got.FetchedAt.IsZero() {
+		t.Fatalf("WriteResource must stamp a non-zero FetchedAt")
+	}
+}
