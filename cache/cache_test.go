@@ -144,7 +144,7 @@ func TestInvalidRoot_CreatesNothing(t *testing.T) {
 
 func TestUnsafeComponents(t *testing.T) {
 	root := t.TempDir()
-	bad := []string{"", "..", "a/b", "../escape", ".hidden..x"}
+	bad := []string{"", "..", "a/b", `a\b`, "../escape", ".hidden..x"}
 	for _, v := range bad {
 		t.Run("instance="+v, func(t *testing.T) {
 			loc := cache.Locator{Root: root, InstanceKey: v}

@@ -82,8 +82,11 @@ func WriteResource[T any](loc Locator, name, ttl string, data T) error {
 }
 
 // atomicWriteEnvelope marshals env and writes it to the cache path for name
-// using a temp-file-in-same-dir → rename. The temp file is removed on every
-// failure branch so a crash never leaves a partial envelope.
+// using a temp-file-in-same-dir → rename. The rename makes the final file
+// appear atomically (a reader sees either the old envelope or the new one,
+// never a partial one). The temp file is removed on every error branch; a
+// hard process/host crash can still leave an orphan *.json.tmp, which the
+// next successful write supersedes (it is never read as an envelope).
 func atomicWriteEnvelope[T any](loc Locator, name string, env Envelope[T]) error {
 	path, err := loc.resourceFile(name)
 	if err != nil {

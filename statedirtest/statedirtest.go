@@ -33,6 +33,10 @@ var envSubdir = map[string]string{
 
 // Hermetic isolates the full §3.1 7-var env set under t.TempDir() and returns
 // the temp root. Every override is restored by t.Setenv's own cleanup.
+//
+// Must NOT be called from a test that has called t.Parallel: t.Setenv mutates
+// process-global env and Go panics in that case. Use a per-instance override
+// for parallel tests instead.
 func Hermetic(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

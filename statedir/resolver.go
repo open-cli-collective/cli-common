@@ -39,7 +39,10 @@ func validateComponent(kind, v string) error {
 		return fmt.Errorf("%w: %s is empty", ErrInvalidName, kind)
 	case v == "." || v == "..":
 		return fmt.Errorf("%w: %s is %q", ErrInvalidName, kind, v)
-	case strings.ContainsRune(v, '/') || strings.ContainsRune(v, os.PathSeparator):
+	case strings.ContainsAny(v, `/\`):
+		// Reject BOTH separators on every OS so the "single path component"
+		// contract is platform-independent (a name valid on Linux must not
+		// become a traversal on Windows).
 		return fmt.Errorf("%w: %s %q contains a path separator", ErrInvalidName, kind, v)
 	case strings.Contains(v, ".."):
 		return fmt.Errorf("%w: %s %q contains %q", ErrInvalidName, kind, v, "..")
