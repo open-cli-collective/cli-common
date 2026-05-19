@@ -20,8 +20,10 @@ import (
 // cache miss so schema bumps self-heal on the next write.
 const Version = 1
 
-// ErrCacheMiss reports an absent or version-mismatched envelope. It is not an
-// error condition for callers — it is the "fetch and populate" signal.
+// ErrCacheMiss reports an envelope that is absent, version-mismatched, or
+// whose stored identity (resource/instance) disagrees with the key it was
+// read under. It is not an error condition for callers — it is the "fetch
+// and populate" signal.
 var ErrCacheMiss = errors.New("cache: miss")
 
 // Envelope is the on-disk JSON shape for a single cached resource.
@@ -36,8 +38,9 @@ type Envelope[T any] struct {
 
 // ReadResource reads the envelope for name at loc.
 //   - (envelope, nil) on success.
-//   - (zero, ErrCacheMiss) if the file does not exist or the on-disk Version
-//     differs from the current schema.
+//   - (zero, ErrCacheMiss) if the file does not exist, the on-disk Version
+//     differs from the current schema, or the stored resource/instance does
+//     not match the requested name / loc.InstanceKey.
 //   - (zero, error) on path validation, I/O, or JSON decode failure.
 //
 // ReadResource does NOT check freshness; callers use Classify.
