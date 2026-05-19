@@ -329,3 +329,31 @@ func TestWriteResource_StillStampsFetchedAt(t *testing.T) {
 		t.Fatalf("WriteResource must stamp a non-zero FetchedAt")
 	}
 }
+
+func TestUnderscoreComponentsAreValid(t *testing.T) {
+	// Resource/instance names legitimately use underscores; this must
+	// round-trip (the first consumer, jtk, imposed no charset limit on
+	// resource names). Purely permissive widening.
+	loc := cache.Locator{Root: t.TempDir(), InstanceKey: "host_1"}
+	if err := cache.WriteResource(loc, "also_ok", "1h", payload{Name: "u", N: 9}); err != nil {
+		t.Fatalf("WriteResource with underscores: %v", err)
+	}
+	got, err := cache.ReadResource[payload](loc, "also_ok")
+	if err != nil {
+		t.Fatalf("ReadResource with underscores: %v", err)
+	}
+	if got.Data.N != 9 || got.Instance != "host_1" || got.Resource != "also_ok" {
+		t.Fatalf("underscore round-trip wrong: %+v", got)
+	}
+}
+
+func TestUnderscoreWideningStillRejectsUnsafe(t *testing.T) {
+	// Regression: widening to allow "_" must not weaken the traversal /
+	// separator / trailing-dot guards.
+	root := t.TempDir()
+	for _, bad := range []string{"a/b", `a\b`, "..", "a..b", "../x", "trailing.", "_leading"} {
+		if err := cache.WriteResource(cache.Locator{Root: root, InstanceKey: "ok"}, bad, "1h", payload{}); !errors.Is(err, cache.ErrInvalidName) {
+			t.Fatalf("name %q: err = %v, want ErrInvalidName", bad, err)
+		}
+	}
+}

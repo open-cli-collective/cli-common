@@ -20,10 +20,14 @@ var (
 
 // safeComponent bounds instance keys and resource names to the subset that is
 // safe to compose into a filesystem path: letters, digits, dot, hyphen,
-// starting alphanumeric. Path separators, whitespace, and control characters
-// are rejected rather than trusted (the values are caller-supplied — e.g. a
-// hostname derived from config).
-var safeComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-]*$`)
+// underscore, starting alphanumeric. Path separators, whitespace, and control
+// characters are rejected rather than trusted (the values are caller-supplied
+// — e.g. a hostname derived from config, or a resource name). Underscore is
+// included because resource names legitimately use it (the first consumer,
+// jtk, imposed no charset limit on resource names); it is filesystem-safe and
+// not a separator, so widening to allow it is purely permissive (no
+// previously-valid input becomes invalid).
+var safeComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*$`)
 
 // validComponent also rejects a ".." substring (traversal) and a trailing dot.
 // A trailing dot matters cross-OS: Windows (NTFS/FAT) silently strips it, so
