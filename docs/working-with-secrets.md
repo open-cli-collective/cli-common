@@ -384,7 +384,7 @@ If a step turns up something Part 1 didn't anticipate (a new credential class, a
 
 > **Agent guardrail.** Existing CLIs in this manifest contain code that treats env vars, config-file fields, and ad-hoc plaintext files as first-class runtime credential sources. **Do not preserve these as runtime sources for convenience.** They are exactly what this migration removes. Env vars and flags remain valid as `init` / `set-credential` *ingress* paths (per derivation step 4 above). Anything else is a legacy path to be migrated or deprecated, not copied forward into the new design. If a legacy behavior seems load-bearing, surface it as a compatibility exception in this document before implementing it — do not infer one.
 
-Cross-CLI prerequisite work, then per-CLI items. Should be sequenced before [cli-deployment-manifest.md](cli-deployment-manifest.md) (the installer / `config clear --all` work depends on this).
+Cross-CLI prerequisite work, then per-CLI items. Should be sequenced before `cli-deployment-manifest.md` (the installer / `config clear --all` work depends on this).
 
 ## §2.1 Cross-CLI prerequisite — `cli-common/credstore`
 
@@ -613,7 +613,7 @@ This section originally posed sequencing as a choice between two options, recomm
 
 1. **`nrq`** (§2.5). The one CLI of the five not yet migrated. Can run in parallel with anything below it.
 2. **No-leak test landed in each per-CLI PR** (§1.12). Already the practice for B1–B3; mentioned here so it doesn't get dropped for `nrq`.
-3. **Installer / `config clear --all` rollout** in [cli-deployment-manifest.md](cli-deployment-manifest.md) §1.5 and §3.
+3. **Installer / `config clear --all` rollout** in `cli-deployment-manifest.md` §1.5 and §3.
 4. **Profile selection / multi-tenant UX** (§2.7). Independent of everything above; revisit when there's a concrete need.
 
 ---
@@ -627,7 +627,7 @@ This section originally posed sequencing as a choice between two options, recomm
 > 3. **`atlassian-cli`** (§2.2). At this point credstore has been through one round of real consumer feedback and its rough edges are filed down.
 > 4. **`gro`** (§2.3). The two-phase OAuth dance is novel enough that doing it last lets you learn from the other three first.
 > 5. **In parallel with #3 and #4:** the other of `nrq` / `slck` that wasn't picked for #2.
-> 6. **Then:** installer / `config clear --all` work in [cli-deployment-manifest.md](cli-deployment-manifest.md) §1.5 and §3.
+> 6. **Then:** installer / `config clear --all` work in `cli-deployment-manifest.md` §1.5 and §3.
 >
 > **Option B — User-visible impact maximizing.** Keep `atlassian-cli` second-after-credstore (it has the most users and the most acute pain — plaintext token on disk). Accept that credstore will go through teething pains on its hardest consumer first. **Only viable if §2.1's test suite is genuinely thorough** (in-memory backend, all four backends in CI, atomicity tests, fail-closed tests). Without that, the debugging happens in `atlassian-cli`'s PR review and slows everything down.
 >
