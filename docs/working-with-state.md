@@ -328,8 +328,8 @@ not designed, until cfl forces the question (rule of three).**
   needs the tier-2 registry/DAG/fetcher/refresh shape today — gro uses
   tier-1 primitives only, and cfl has no cache. Promoting from a single
   consumer would just relocate jtk code without surfacing a shared
-  abstraction. Re-evaluate when cfl gains a cache (or any third consumer
-  needs the same shape).
+  abstraction. Re-evaluate when cfl gains a cache, or any second
+  tier-2-shape consumer (registry/DAG/fetcher/refresh) appears.
 
 > **The commons API co-evolves during the ports — under a hard guardrail.**
 > Each port may surface a constraint that generalizes (a) or tier 1; the jtk
@@ -435,8 +435,8 @@ already-shipped `credstore` and both standards docs.
 **Ports shipped (all status Deployed):**
 | Unit | Repo SHA | Ticket | PR |
 |------|----------|--------|-----|
-| jtk cache re-migration | atlassian-cli@`59a2fb9` | MON-5369 | #371 |
-| Atlassian shared config (cfl+jtk combined) | atlassian-cli@`b867c0e` | MON-5370 | #372 |
+| jtk cache re-migration | atlassian-cli@`59a2fb9` | MON-5369 | #373 |
+| Atlassian shared config (cfl+jtk combined) | atlassian-cli@`b867c0e` | MON-5370 | #374 |
 | gro (config→statedir + cache→cli-common/cache + drop user-TTL) | google-readonly@`1f472eb` | MON-5371 | #134 |
 | slck (resolver + atomic + perms) | slack-chat-api@`2619ba3` | MON-5372 | #165 |
 | nrq (resolver + dual-probe credentials file) | newrelic-cli@`128c84d` | MON-5373 | #101 |
@@ -480,13 +480,19 @@ inherits them):**
    if the OLD path is unparseable, `ApplyConfigRelocation` would
    propagate corrupt bytes to the new dir. Validate-then-mark-copy.
 
-5. **Companion-plaintext-file dual-probe** (MON-5373): when the
-   resolver switch also relocates a secret-bearing companion file
-   (gro: `token.json`; nrq: `credentials`), the migrator MUST probe
-   BOTH old and new locations via a shared `CredentialFileCandidates`
-   /`OldHandRolledXxxPath`/`CanonicalXxxPath` trio so migrator and
-   `clear --all` cannot drift. Equality is **parsed-projection**, not
-   byte-equal (ordering / trailing-newline differences are harmless).
+5. **Companion-secret-file dual-probe** (MON-5371 gro, MON-5373 nrq):
+   when the resolver switch also relocates a secret-bearing companion
+   file (gro: `token.json`; nrq: `credentials`), the migrator MUST
+   probe BOTH old and new locations — old/new candidate enumeration
+   with path-identity dedup — and the shared candidate helper must be
+   the SAME one `clear --all` consumes (so migrator and clear cannot
+   drift). Equality model is **format-dependent**: text-key=value
+   files (nrq's `credentials`) compare on parsed/effective projection
+   (api_key / account_id / region — harmless ordering or trailing-
+   newline differences must NOT false-conflict); opaque blobs (gro's
+   `token.json`) compare on the trimmed raw serialized value
+   (different bytes = different token = conflict). Pick the model
+   that matches the file format, not a single family rule.
 
 6. **7-var `statedirtest.Hermetic`** mandatory: HOME/XDG-only test
    isolation leaks the developer's real `~/Library/Application
@@ -511,10 +517,18 @@ inherits them):**
    passes if the gate ran but didn't run BEFORE migration. Both
    assertions together prove ordering.
 
-9. **`reflect.DeepEqual` on default-applied Config**: material
-   equality compares the full default-applied struct — future Config
-   fields auto-trigger divergence with no manual comparator
-   maintenance.
+9. **Material equality compares the user-meaningful default-applied
+   projection**: apply defaults on both sides BEFORE comparing (so an
+   omitted field that semantically defaults to X compares equal to an
+   explicit X). Use `reflect.DeepEqual` on the full default-applied
+   struct ONLY when every field is directly comparable AND semantically
+   user-meaningful after defaults (slck / nrq). When a field needs
+   semantic normalization (gro: `OAuthClientPath` default-old vs
+   default-new are equivalent paths; `GrantedScopes` sort order is
+   meaningless), build an explicit projection so legitimate
+   default-path relocations don't false-conflict. Either way, future
+   fields force a deliberate choice — silent silence is what hides
+   divergence.
 
 10. **Path-identity dedup**: Linux collapses old≡new (statedir ≡
     `$XDG_CONFIG_HOME`); operations on both paths must dedupe so
