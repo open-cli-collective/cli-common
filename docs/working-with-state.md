@@ -492,8 +492,10 @@ inherits them):**
    `internal/cmd/configcmd/config.go` clear). gro's case is the other
    shape: the token dual-probe lives in the keychain migrator via
    `GetTokenPath()` + `OldHandRolledTokenPath()`, and `config clear
-   --all` does NOT consume that helper because gro's cleanup scope is
-   config + cache only (token.json is explicitly excluded from
+   --all` does NOT consume that helper because gro's `--all` file-scrub
+   scope is config + cache only; OAuth token cleanup happens through
+   the keychain path, not the legacy `token.json` candidate
+   enumeration (token.json is also explicitly excluded from
    `ApplyConfigRelocation` — token lives entirely in the keychain
    layer). Equality model is **format-dependent**: text-key=value
    files (nrq's `credentials`) compare on parsed/effective projection
