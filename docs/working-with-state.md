@@ -324,6 +324,12 @@ not designed, until cfl forces the question (rule of three).**
   documented copied pattern*. **Tier-2 promotion criteria (record now):** ≥2
   consumers need the same registry/DAG shape AND the API has been stable
   across one full port cycle without per-consumer special-casing.
+  **INT-310 close-out (MON-5375, 2026-05-20): continue deferral.** Only jtk
+  needs the tier-2 registry/DAG/fetcher/refresh shape today — gro uses
+  tier-1 primitives only, and cfl has no cache. Promoting from a single
+  consumer would just relocate jtk code without surfacing a shared
+  abstraction. Re-evaluate when cfl gains a cache (or any third consumer
+  needs the same shape).
 
 > **The commons API co-evolves during the ports — under a hard guardrail.**
 > Each port may surface a constraint that generalizes (a) or tier 1; the jtk
@@ -415,6 +421,111 @@ act* — done together (not two horizontal sweeps).
    new `cli-common` state package + this doc (credstore itself is unchanged
    here); repin consumers per the §5 matrix rule.
 6. Finalize this doc from what survived; make the tier-2 call.
+   **DONE 2026-05-20 (MON-5375):** see §6.6 below for the retrospective and §5b for the tier-2 call.
+
+### 6.6 INT-310 close-out retrospective (MON-5375, 2026-05-20)
+
+The state workstream shipped 5 of 6 planned port units against the
+candidate cli-common SHA `e67b2fc81f9d7072679d8cd77098121ed6f15f47` (no
+breaking changes required). With the matrix green per §5, **cli-common
+`v0.1.0` is the INT-310 state baseline tag** — first stable for
+`statedir` + `statedirtest` + `cache` (tier 1), alongside the
+already-shipped `credstore` and both standards docs.
+
+**Ports shipped (all status Deployed):**
+| Unit | Repo SHA | Ticket | PR |
+|------|----------|--------|-----|
+| jtk cache re-migration | atlassian-cli@`59a2fb9` | MON-5369 | #371 |
+| Atlassian shared config (cfl+jtk combined) | atlassian-cli@`b867c0e` | MON-5370 | #372 |
+| gro (config→statedir + cache→cli-common/cache + drop user-TTL) | google-readonly@`1f472eb` | MON-5371 | #134 |
+| slck (resolver + atomic + perms) | slack-chat-api@`2619ba3` | MON-5372 | #165 |
+| nrq (resolver + dual-probe credentials file) | newrelic-cli@`128c84d` | MON-5373 | #101 |
+
+**Parked:** MON-5374 sfdc (salesforce-cli#42). sfdc has no cli-common
+dependency today, so it does not ride the v0.1.0 train; it will adopt
+the tag when un-parked. This is the explicit "resolve or exclude"
+disposition the GH issue called for.
+
+**Commons API additions during ports (both additive — Codex-cleared per §5):**
+- `cache.WriteEnvelope` (cli-common#20, SHA `2c4a5b8`) — verbatim atomic writer; jtk-facade required it to relocate envelopes byte-for-byte from `~/.jtk/cache`.
+- Underscore allowed in `cache` component regex `^[A-Za-z0-9][A-Za-z0-9._\-]*$` (cli-common#21, SHA `e67b2fc`) — jtk's pre-port instance keys contain underscores.
+
+No exported symbol changed behavior across the 5 ports; the API was
+stable enough that no train-coordinated repin was needed mid-rollout.
+
+**Reusable port patterns (codified here so future state-touching work
+inherits them):**
+
+1. **Mutation-free `DetectXxxRelocation` + gated `ApplyXxxRelocation`**:
+   detection runs anywhere (init AND runtime); copy runs only at init's
+   pre-write gate. Mixing the two surfaces was the MON-5371 plan-r1
+   blocker — kept separate ever since.
+
+2. **`Load` / `LoadForRuntime` split with `cfg != nil` soft-degrade
+   contract** (MON-5371): mutating callers (init post-gate, `config
+   set`, migrating `keychain.Open`) use strict `Load`; pure readers
+   (`config show`, `OpenNoMigrate`, runtime resolution) use
+   `LoadForRuntime` which warns-and-soft-degrades ONLY when canonical
+   was readable. Malformed canonical under conflict MUST hard-fail —
+   warning + defaulting would silently swap `CredentialRef` back to
+   the default and mask the corruption.
+
+3. **Unexported `xxxFromNewDir` testable seam** (MON-5372 trap-fix):
+   production AND tests call the same path. A parallel test helper
+   that re-implements the public seam lets production regress while
+   tests still pass — the unexported `loadFromNewDir(newDir)` /
+   `loadForRuntimeFromNewDir(newDir)` pair makes that impossible.
+
+4. **Old-only-malformed fails loud BEFORE `CopyNeeded`** (MON-5371):
+   if the OLD path is unparseable, `ApplyConfigRelocation` would
+   propagate corrupt bytes to the new dir. Validate-then-mark-copy.
+
+5. **Companion-plaintext-file dual-probe** (MON-5373): when the
+   resolver switch also relocates a secret-bearing companion file
+   (gro: `token.json`; nrq: `credentials`), the migrator MUST probe
+   BOTH old and new locations via a shared `CredentialFileCandidates`
+   /`OldHandRolledXxxPath`/`CanonicalXxxPath` trio so migrator and
+   `clear --all` cannot drift. Equality is **parsed-projection**, not
+   byte-equal (ordering / trailing-newline differences are harmless).
+
+6. **7-var `statedirtest.Hermetic`** mandatory: HOME/XDG-only test
+   isolation leaks the developer's real `~/Library/Application
+   Support` / `%APPDATA%` paths on macOS/Windows. Caught a real-dir
+   leak in MON-5370 (cfl+jtk shared test was reading the dev's actual
+   bearer config). `t.Parallel`-unsafe — use sequentially.
+
+7. **Cleanup-command recovery contract** (MON-5372/5373): `clear
+   --all` (and equivalents) is the user's primary recovery path —
+   it must not itself be blocked by the broken state it exists to
+   wipe. Resolve canonical + old paths up front WITHOUT calling
+   `Load`; store-open is best-effort under `--all` so an unparseable
+   canonical / invalid `credential_ref` / invalid `keyring.backend`
+   does not stall the file scrub. Pinned by
+   `TestConfigClear_All_MalformedConfig_StillScrubsFiles` (nrq).
+
+8. **Init-gate ordering proof** (MON-5372/5373): a gate-vs-migration
+   ordering test seeds a legacy artifact (credentials file / token)
+   AND asserts the error message contains the gate-specific wrapper.
+   Either alone is insufficient — the artifact-untouched check passes
+   even if a downstream strict-`Load` rejected; the message-only check
+   passes if the gate ran but didn't run BEFORE migration. Both
+   assertions together prove ordering.
+
+9. **`reflect.DeepEqual` on default-applied Config**: material
+   equality compares the full default-applied struct — future Config
+   fields auto-trigger divergence with no manual comparator
+   maintenance.
+
+10. **Path-identity dedup**: Linux collapses old≡new (statedir ≡
+    `$XDG_CONFIG_HOME`); operations on both paths must dedupe so
+    they don't double-act. The dedup happens at the candidate-list
+    level (`CredentialFileCandidates`, `configPathsForClear`) so
+    every consumer naturally inherits it.
+
+These ten patterns are the durable INT-310 deposits. Future
+state-touching work (sfdc un-parking, cfl future cache, any new CLI
+adopting the resolver) should inherit them by reading this section —
+not by rediscovering them per port.
 
 ---
 
@@ -453,7 +564,9 @@ act* — done together (not two horizontal sweeps).
       `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`) — `HOME`-only is a
       Windows real-dir leak. Load-bearing; ships once in `cli-common`.
 - [x] **Tier-2 cache extraction (§5b): deferred** to post-cfl; promotion
-      criteria recorded in §5b.
+      criteria recorded in §5b. **Reaffirmed 2026-05-20 (MON-5375):**
+      tier-2 shape has only one consumer (jtk); promotion criteria
+      explicitly unsatisfied. Re-evaluate when cfl gains a cache.
 - [x] **Doc home:** `cli-common/docs/`, versioned + pinned with the code.
 - [x] **Cache location:** `os.UserCacheDir()/<tool>`; jtk re-migrates; gro
       (B2b) stays.
