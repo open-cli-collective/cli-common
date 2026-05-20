@@ -484,9 +484,18 @@ inherits them):**
    when the resolver switch also relocates a secret-bearing companion
    file (gro: `token.json`; nrq: `credentials`), the migrator MUST
    probe BOTH old and new locations — old/new candidate enumeration
-   with path-identity dedup — and the shared candidate helper must be
-   the SAME one `clear --all` consumes (so migrator and clear cannot
-   drift). Equality model is **format-dependent**: text-key=value
+   with path-identity dedup. **If `clear --all` (or equivalent cleanup)
+   also scrubs that companion file, migrator and cleanup must share
+   the SAME candidate-enumeration helper so they cannot drift** —
+   nrq's `CredentialFileCandidates()` is the exemplar (consumed by
+   both `internal/keychain/migrate.go` discover() and
+   `internal/cmd/configcmd/config.go` clear). gro's case is the other
+   shape: the token dual-probe lives in the keychain migrator via
+   `GetTokenPath()` + `OldHandRolledTokenPath()`, and `config clear
+   --all` does NOT consume that helper because gro's cleanup scope is
+   config + cache only (token.json is explicitly excluded from
+   `ApplyConfigRelocation` — token lives entirely in the keychain
+   layer). Equality model is **format-dependent**: text-key=value
    files (nrq's `credentials`) compare on parsed/effective projection
    (api_key / account_id / region — harmless ordering or trailing-
    newline differences must NOT false-conflict); opaque blobs (gro's
@@ -527,8 +536,7 @@ inherits them):**
    default-new are equivalent paths; `GrantedScopes` sort order is
    meaningless), build an explicit projection so legitimate
    default-path relocations don't false-conflict. Either way, future
-   fields force a deliberate choice — silent silence is what hides
-   divergence.
+   fields force a deliberate choice; silence is what hides divergence.
 
 10. **Path-identity dedup**: Linux collapses old≡new (statedir ≡
     `$XDG_CONFIG_HOME`); operations on both paths must dedupe so
