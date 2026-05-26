@@ -56,9 +56,15 @@ func selectBackend(service string, opts *Options, getenv func(string) string, go
 
 // allBackends is the single source of truth for the recognized backend
 // name set, in stable display order. parseBackend, ValidBackendNames,
-// BackendFlagUsage, and the test that guards against drift all derive
+// BackendFlagUsage, and TestAllBackends_MatchesConstants all derive
 // from this slice — adding a backend means editing only this list (and
 // any backend-specific construction in openOSBackend).
+//
+// Treat this as effectively const: never append, never reassign, never
+// mutate an element. Go has no syntax for a constant slice; the package
+// owns this var and no callsite outside select.go is permitted to
+// modify it. Helpers that need a fresh copy (e.g. ValidBackendNames)
+// must allocate their own slice from this one.
 var allBackends = []Backend{
 	BackendKeychain,
 	BackendWinCred,

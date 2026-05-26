@@ -10,7 +10,7 @@ package credstore
 // BindBackendFlag is a separate programmer-error signal that does not.
 //
 // Wiring contract (downstream CLIs):
-//  1. Register --backend using BackendFlagName / BackendFlagUsage.
+//  1. Register --backend using BackendFlagName / BackendFlagUsage().
 //  2. Load config; read the keyring.backend string (empty if unset).
 //  3. Call BindBackendFlag(&opts, flagValue, flagSet, configValue),
 //     passing flagSet=true exactly when the user actually supplied the
@@ -34,12 +34,12 @@ import (
 // BackendFlagName is the canonical long-flag name CLIs should register.
 const BackendFlagName = "backend"
 
-// BackendFlagUsage is help text listing valid values and naming the
-// per-service env var mechanism. Built at package-init time from
-// allBackends so it stays in lock-step with the recognized set.
-var BackendFlagUsage = buildBackendFlagUsage()
-
-func buildBackendFlagUsage() string {
+// BackendFlagUsage returns help text listing valid values and naming
+// the per-service env var mechanism. Built fresh from allBackends each
+// call so it stays in lock-step with the recognized set — a function
+// rather than an exported var so external packages cannot accidentally
+// overwrite it and corrupt every consumer's help text.
+func BackendFlagUsage() string {
 	names := make([]string, len(allBackends))
 	for i, b := range allBackends {
 		names[i] = string(b)

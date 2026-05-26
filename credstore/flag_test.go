@@ -89,16 +89,17 @@ func TestValidBackendNames_MatchesAllBackends(t *testing.T) {
 }
 
 func TestBackendFlagUsage_NamesEveryBackend(t *testing.T) {
+	usage := BackendFlagUsage()
 	for _, b := range allBackends {
-		if !strings.Contains(BackendFlagUsage, string(b)) {
-			t.Errorf("BackendFlagUsage missing %q: %q", b, BackendFlagUsage)
+		if !strings.Contains(usage, string(b)) {
+			t.Errorf("BackendFlagUsage() missing %q: %q", b, usage)
 		}
 	}
-	if !strings.Contains(BackendFlagUsage, "Precedence:") {
-		t.Errorf("BackendFlagUsage should document precedence: %q", BackendFlagUsage)
+	if !strings.Contains(usage, "Precedence:") {
+		t.Errorf("BackendFlagUsage() should document precedence: %q", usage)
 	}
-	if !strings.Contains(BackendFlagUsage, "<SERVICE>_KEYRING_BACKEND") {
-		t.Errorf("BackendFlagUsage should name the env-var equivalent: %q", BackendFlagUsage)
+	if !strings.Contains(usage, "<SERVICE>_KEYRING_BACKEND") {
+		t.Errorf("BackendFlagUsage() should name the env-var equivalent: %q", usage)
 	}
 }
 
