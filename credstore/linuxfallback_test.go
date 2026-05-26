@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/godbus/dbus"
+	"github.com/godbus/dbus/v5"
 )
 
 func TestClassifySecretServiceErr(t *testing.T) {

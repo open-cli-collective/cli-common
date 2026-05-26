@@ -54,15 +54,37 @@ func selectBackend(service string, opts *Options, getenv func(string) string, go
 	return b, SourceAuto, nil
 }
 
+// allBackends is the single source of truth for the recognized backend
+// name set, in stable display order. parseBackend, ValidBackendNames,
+// and BackendFlagUsage all derive from this slice. The companion
+// TestAllBackends_MatchesConstants pins allBackends against the
+// declared Backend constants and against a literal expected slice — so
+// adding a backend means editing allBackends, the backend-specific
+// construction in openOSBackend, AND the test's expected slice in
+// lock-step (failing the test if any one of those is missed).
+//
+// Treat this as effectively const: never append, never reassign, never
+// mutate an element. Go has no syntax for a constant slice; the package
+// owns this var and no callsite outside select.go is permitted to
+// modify it. Helpers that need a fresh copy (e.g. ValidBackendNames)
+// must allocate their own slice from this one.
+var allBackends = []Backend{
+	BackendKeychain,
+	BackendWinCred,
+	BackendSecretService,
+	BackendFile,
+	BackendMemory,
+}
+
 // parseBackend maps a backend string (Options/env/config) to a Backend.
-// Recognized: keychain, wincred, secret-service, file, memory.
+// Iterates allBackends so the recognized set has exactly one source.
 func parseBackend(s string) (Backend, bool) {
-	switch Backend(s) {
-	case BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory:
-		return Backend(s), true
-	default:
-		return "", false
+	for _, b := range allBackends {
+		if Backend(s) == b {
+			return b, true
+		}
 	}
+	return "", false
 }
 
 // osDefaultBackend is the §1.4 auto choice. Linux selects secret-service
