@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/99designs/keyring"
+	"github.com/byteness/keyring"
 )
 
 // TestFileBackendRoundTrip exercises the real encrypted-file backend
@@ -150,10 +150,10 @@ func TestFileBackendPassphraseFuncError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Assumes 99designs/keyring calls FilePasswordFunc lazily (on first
-	// write, not during Open) — verified against keyring v1.2.2. If a
-	// future version prompts eagerly, Open above would fail instead and
-	// this Set assertion would need to move to the Open call.
+	// Assumes the underlying keyring library calls FilePasswordFunc lazily
+	// (on first write, not during Open) — verified against byteness/keyring
+	// v1.9.3. If a future version prompts eagerly, Open above would fail
+	// instead and this Set assertion would need to move to the Open call.
 	err = s.Set("default", "tok", "SUPER-SECRET-VALUE", WithOverwrite())
 	if err == nil {
 		t.Fatal("Set must fail when the passphrase callback errors")

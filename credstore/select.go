@@ -54,15 +54,28 @@ func selectBackend(service string, opts *Options, getenv func(string) string, go
 	return b, SourceAuto, nil
 }
 
+// allBackends is the single source of truth for the recognized backend
+// name set, in stable display order. parseBackend, ValidBackendNames,
+// BackendFlagUsage, and the test that guards against drift all derive
+// from this slice — adding a backend means editing only this list (and
+// any backend-specific construction in openOSBackend).
+var allBackends = []Backend{
+	BackendKeychain,
+	BackendWinCred,
+	BackendSecretService,
+	BackendFile,
+	BackendMemory,
+}
+
 // parseBackend maps a backend string (Options/env/config) to a Backend.
-// Recognized: keychain, wincred, secret-service, file, memory.
+// Iterates allBackends so the recognized set has exactly one source.
 func parseBackend(s string) (Backend, bool) {
-	switch Backend(s) {
-	case BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory:
-		return Backend(s), true
-	default:
-		return "", false
+	for _, b := range allBackends {
+		if Backend(s) == b {
+			return b, true
+		}
 	}
+	return "", false
 }
 
 // osDefaultBackend is the §1.4 auto choice. Linux selects secret-service

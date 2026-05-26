@@ -1,9 +1,9 @@
 package credstore
 
 // Real OS-keyring backends, per the Secret-Handling Standard §1.4 and
-// §2.1. This is the ONLY file in the project that imports
-// github.com/99designs/keyring — CLIs depend on credstore, never on the
-// library directly. Backend selection has already happened
+// §2.1. Together with linuxfallback.go, this file isolates the
+// github.com/byteness/keyring import — CLIs depend on credstore, never
+// on the library directly. Backend selection has already happened
 // (selectBackend); this file just constructs and adapts the chosen one.
 
 import (
@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/99designs/keyring"
+	"github.com/byteness/keyring"
 )
 
 // osKeyringBackend adapts a keyring.Keyring to the internal backend
@@ -105,10 +105,11 @@ func (b *osKeyringBackend) get(itemKey string) (string, error) {
 	return string(it.Data), nil
 }
 
-// set has no atomic compare-and-swap: 99designs/keyring exposes none, so
-// the no-overwrite guard is a best-effort Get-then-Set. Under a
-// concurrent cross-process writer the check can race (§1.5.1 "practical
-// atomicity") — exact only for the in-memory backend.
+// set has no atomic compare-and-swap: the underlying keyring library
+// exposes none, so the no-overwrite guard is a best-effort
+// Get-then-Set. Under a concurrent cross-process writer the check can
+// race (§1.5.1 "practical atomicity") — exact only for the in-memory
+// backend.
 func (b *osKeyringBackend) set(itemKey, value string, overwrite bool) error {
 	if !overwrite {
 		switch _, err := b.kr.Get(itemKey); {
@@ -154,7 +155,8 @@ func (b *osKeyringBackend) listKeys() ([]string, error) {
 	return keys, nil
 }
 
-// close is a no-op: 99designs/keyring exposes no Close. The Store still
-// best-effort clears the in-memory backend; OS keyrings own their own
-// lifecycle and there is nothing to release here.
+// close is a no-op: the underlying keyring library exposes no Close.
+// The Store still best-effort clears the in-memory backend; OS
+// keyrings own their own lifecycle and there is nothing to release
+// here.
 func (b *osKeyringBackend) close() error { return nil }

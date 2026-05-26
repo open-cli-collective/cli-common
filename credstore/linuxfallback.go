@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/99designs/keyring"
-	"github.com/godbus/dbus"
+	"github.com/byteness/keyring"
+	"github.com/godbus/dbus/v5"
 )
 
 // ssClass is the result of classifying a Secret Service probe (§1.4).

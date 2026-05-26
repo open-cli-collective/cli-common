@@ -49,12 +49,13 @@ The standard is a *better default*, not a security boundary. It removes the most
 
 ## §1.1 Library
 
-All Collective CLIs use **`github.com/99designs/keyring`** as the credential-store abstraction.
+All Collective CLIs use **`github.com/byteness/keyring`** as the credential-store abstraction. (Migrated from `github.com/99designs/keyring` in #23 — ByteNess is an active fork that picks up CVE fixes and ongoing maintenance.)
 
 - macOS → Keychain (Security framework, no shelling out).
 - Windows → Credential Manager (`wincred`).
 - Linux → Secret Service (D-Bus), then file fallback (see §1.4).
-- A shared internal package (working name `cli-common/credstore` or similar) wraps the library so every CLI uses the same backend priority, error messages, and config layout. CLIs do not depend on `99designs/keyring` directly.
+- A shared internal package, `cli-common/credstore`, wraps the library so every CLI uses the same backend priority, error messages, and config layout. CLIs do not depend on `byteness/keyring` directly.
+- For surfacing a `--backend` flag and `keyring.backend` config key in a CLI, use `credstore.BackendFlagName` / `credstore.BackendFlagUsage` and `credstore.BindBackendFlag` — see the package doc on `credstore/flag.go`.
 
 ## §1.2 What goes where
 
@@ -123,7 +124,7 @@ Within a bundle, individual secrets are addressed by well-known keys defined per
 
 **One key per logical credential.** A bundle may contain multiple keys only when those keys represent distinct logical credentials defined by the CLI's Part 2 section. A CLI MUST NOT define multiple keys for the same logical credential with resolver precedence between them unless that CLI's Part 2 section explicitly grants the exception, names the full key set, defines the precedence order, and requires tests proving write/resolve consistency for every write target that could otherwise be shadowed.
 
-**Concrete mapping to `99designs/keyring`.** The library exposes `Config.ServiceName` (a single string) and `Item.Key` (a single string per stored item) with no native sub-namespace concept. The shared `cli-common/credstore` wrapper maps the standard's three-segment addressing (`<service>/<profile>/<key>`) onto the library's two as follows:
+**Concrete mapping to `byteness/keyring`.** The library exposes `Config.ServiceName` (a single string) and `Item.Key` (a single string per stored item) with no native sub-namespace concept. The shared `cli-common/credstore` wrapper maps the standard's three-segment addressing (`<service>/<profile>/<key>`) onto the library's two as follows:
 
 - `ServiceName` ← the `service` segment of the ref.
 - `Item.Key` ← `<profile>/<key>`, joined with a literal `/`.
@@ -153,7 +154,7 @@ The shared credstore package selects backends in this fixed order:
 
 **Linux fallback — fail closed on a working-but-denied keyring.** Distinguish two cases:
 
-- **Secret Service is unavailable.** No D-Bus session bus (headless server, WSL without configured keyring, container without daemon). The CLI may fall back to the encrypted-file backend at `~/.local/share/<service>/keyring` (99designs/keyring's `file` backend). The user's environment doesn't support OS-keyring storage at all; the file is the best we can do.
+- **Secret Service is unavailable.** No D-Bus session bus (headless server, WSL without configured keyring, container without daemon). The CLI may fall back to the encrypted-file backend at `~/.local/share/<service>/keyring` (byteness/keyring's `file` backend). The user's environment doesn't support OS-keyring storage at all; the file is the best we can do.
 - **Secret Service is present but locked, returns an auth failure, or otherwise rejects the request.** **Fail closed** with an actionable error that names the backend, the operation that failed, and how to unlock or grant access (`gnome-keyring-daemon`, `seahorse`, `kwalletmanager`, etc.). Do *not* silently fall back to the file backend. A user with a working desktop keyring that happens to be locked must not have their secrets silently downgraded to an encrypted file in a different location — that is a stealth security regression and a likely source of "where did my credentials go?" support tickets.
 - **Ambiguous failure → fail closed.** If the wrapper cannot confidently distinguish "unavailable" from "denied/locked" — D-Bus answered but returned an opaque error, the backend timed out, the response shape was unexpected — treat the case as denied/locked and fail closed. The fallback path is opt-in only when we are sure no working keyring is present.
 - **Explicit user opt-in to the file backend** is supported via a config flag (working name `keyring.backend: file` in `config.yml`) or an env var (`<SERVICE>_KEYRING_BACKEND=file`). With that set, the CLI uses the file backend unconditionally and never attempts Secret Service. This is the supported path for users who genuinely prefer the file backend. The backend-selector env var is non-secret runtime configuration (it controls *where* the CLI looks, not *what* it finds); it is not the runtime-env-var exception described below.
@@ -313,7 +314,7 @@ In automation, prefer `set-credential` per-secret over `init` for everything: it
 
 The CLI itself does not know about 1Password. Adding a runtime `op` resolver to the CLI would entangle every CLI with `op`'s availability, version compatibility, and account configuration. Keep the boundary clean: installers translate from external secret managers into the OS keyring, and the CLI reads from the OS keyring.
 
-A consequence: `99designs/keyring` does not need to support 1Password as a backend, even though we'd nominally like it to.
+A note on what credstore exposes: as of #23, `credstore` exposes only the five backends `keychain`, `wincred`, `secret-service`, `file`, `memory`. Whether to surface external secret managers (1Password / KeePassXC / `pass`) as additional native keyring backends is tracked in #24 and out of scope here. The `set-credential` installer-time guidance above stays the canonical path regardless.
 
 ## §1.11 Compliance criteria
 

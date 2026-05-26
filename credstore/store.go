@@ -15,8 +15,8 @@ package credstore
 // Atomicity caveat (§1.5.1): the no-overwrite and SetBundle rollback
 // guarantees are exact only for the in-memory backend. The OS/file
 // backends are best-effort against a concurrent cross-process writer
-// because 99designs/keyring exposes no compare-and-swap; the wrapper
-// achieves practical, not transactional, atomicity.
+// because the underlying keyring library exposes no compare-and-swap;
+// the wrapper achieves practical, not transactional, atomicity.
 
 import (
 	"errors"
