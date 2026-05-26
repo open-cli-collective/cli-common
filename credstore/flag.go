@@ -3,7 +3,7 @@ package credstore
 // Public helpers for CLIs that surface a --backend flag and a
 // keyring.backend config key. Framework-agnostic: this file imports no
 // flag package and no cobra. Each downstream CLI registers its own
-// --backend flag using BackendFlagName / BackendFlagUsage and validates
+// --backend flag using BackendFlagName / BackendFlagUsage() and validates
 // the value with ParseBackend (or routes both flag + config values
 // through BindBackendFlag). Invalid backend values returned by either
 // helper wrap ErrBackendNotImplemented; the nil-opts guard on

@@ -55,7 +55,7 @@ All Collective CLIs use **`github.com/byteness/keyring`** as the credential-stor
 - Windows → Credential Manager (`wincred`).
 - Linux → Secret Service (D-Bus), then file fallback (see §1.4).
 - A shared internal package, `cli-common/credstore`, wraps the library so every CLI uses the same backend priority, error messages, and config layout. CLIs do not depend on `byteness/keyring` directly.
-- For surfacing a `--backend` flag and `keyring.backend` config key in a CLI, use `credstore.BackendFlagName` / `credstore.BackendFlagUsage` and `credstore.BindBackendFlag` — see the package doc on `credstore/flag.go`.
+- For surfacing a `--backend` flag and `keyring.backend` config key in a CLI, use `credstore.BackendFlagName` / `credstore.BackendFlagUsage()` and `credstore.BindBackendFlag` — see the package doc on `credstore/flag.go`.
 
 ## §1.2 What goes where
 
