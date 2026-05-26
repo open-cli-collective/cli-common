@@ -86,7 +86,7 @@ func TestBackendEnvVar(t *testing.T) {
 
 func TestBindBackendFlag_FlagValid(t *testing.T) {
 	opts := &Options{}
-	if err := BindBackendFlag(opts, "file", "secret-service"); err != nil {
+	if err := BindBackendFlag(opts, "file", true, "secret-service"); err != nil {
 		t.Fatalf("BindBackendFlag: unexpected error: %v", err)
 	}
 	if opts.Backend != BackendFile {
@@ -99,7 +99,7 @@ func TestBindBackendFlag_FlagValid(t *testing.T) {
 
 func TestBindBackendFlag_FlagInvalid(t *testing.T) {
 	opts := &Options{Backend: BackendKeychain, ConfigBackend: BackendFile}
-	err := BindBackendFlag(opts, "bogus", "secret-service")
+	err := BindBackendFlag(opts, "bogus", true, "secret-service")
 	if err == nil {
 		t.Fatal("BindBackendFlag(bogus): want error, got nil")
 	}
@@ -115,16 +115,39 @@ func TestBindBackendFlag_FlagInvalid(t *testing.T) {
 	}
 }
 
-func TestBindBackendFlag_EmptyFlag(t *testing.T) {
+func TestBindBackendFlag_FlagNotSet(t *testing.T) {
+	// flagSet=false → flagValue (even if non-empty) is ignored; only
+	// ConfigBackend is updated. This is the cobra "flag was never on the
+	// command line" case.
 	opts := &Options{}
-	if err := BindBackendFlag(opts, "", "file"); err != nil {
-		t.Fatalf("BindBackendFlag empty flag: unexpected error: %v", err)
+	if err := BindBackendFlag(opts, "file", false, "secret-service"); err != nil {
+		t.Fatalf("BindBackendFlag flagSet=false: unexpected error: %v", err)
 	}
 	if opts.Backend != "" {
-		t.Errorf("opts.Backend = %q, want empty (no flag supplied)", opts.Backend)
+		t.Errorf("opts.Backend = %q, want empty (flagSet=false)", opts.Backend)
+	}
+	if opts.ConfigBackend != BackendSecretService {
+		t.Errorf("opts.ConfigBackend = %q, want %q", opts.ConfigBackend, BackendSecretService)
+	}
+}
+
+func TestBindBackendFlag_ExplicitEmptyFlag(t *testing.T) {
+	// flagSet=true with empty flagValue (the --backend= edge case) must
+	// fail closed — never silently fall through to lower-precedence
+	// env/config/auto selection.
+	opts := &Options{Backend: BackendKeychain, ConfigBackend: BackendFile}
+	err := BindBackendFlag(opts, "", true, "secret-service")
+	if err == nil {
+		t.Fatal("BindBackendFlag(--backend=): want error, got nil")
+	}
+	if !errors.Is(err, ErrBackendNotImplemented) {
+		t.Errorf("errors.Is(_, ErrBackendNotImplemented) = false, want true; err=%v", err)
+	}
+	if opts.Backend != BackendKeychain {
+		t.Errorf("opts.Backend mutated on error: got %q, want %q", opts.Backend, BackendKeychain)
 	}
 	if opts.ConfigBackend != BackendFile {
-		t.Errorf("opts.ConfigBackend = %q, want %q", opts.ConfigBackend, BackendFile)
+		t.Errorf("opts.ConfigBackend mutated on error: got %q, want %q", opts.ConfigBackend, BackendFile)
 	}
 }
 
@@ -133,7 +156,7 @@ func TestBindBackendFlag_ConfigPassthrough(t *testing.T) {
 	// validates it inside selectBackend. A stale/unknown config string
 	// surfaces there, not here.
 	opts := &Options{}
-	if err := BindBackendFlag(opts, "", "not-real-yet"); err != nil {
+	if err := BindBackendFlag(opts, "", false, "not-real-yet"); err != nil {
 		t.Fatalf("BindBackendFlag with unknown config: unexpected error at this layer: %v", err)
 	}
 	if string(opts.ConfigBackend) != "not-real-yet" {
@@ -142,7 +165,7 @@ func TestBindBackendFlag_ConfigPassthrough(t *testing.T) {
 }
 
 func TestBindBackendFlag_NilOpts(t *testing.T) {
-	err := BindBackendFlag(nil, "file", "")
+	err := BindBackendFlag(nil, "file", true, "")
 	if err == nil {
 		t.Fatal("BindBackendFlag(nil, ...): want error, got nil (must not panic)")
 	}

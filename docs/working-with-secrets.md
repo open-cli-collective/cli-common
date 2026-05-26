@@ -312,9 +312,9 @@ op read 'op://Vault/Item/token' | <cli> init --url <url> --email <email> --token
 
 In automation, prefer `set-credential` per-secret over `init` for everything: it has a smaller surface, no verification round-trip to fail on, and one secret per invocation maps cleanly onto one `op read`.
 
-The CLI itself does not know about 1Password. Adding a runtime `op` resolver to the CLI would entangle every CLI with `op`'s availability, version compatibility, and account configuration. Keep the boundary clean: installers translate from external secret managers into the OS keyring, and the CLI reads from the OS keyring.
+**Default path: the CLI does not invoke 1Password at runtime.** Adding an `op` resolver to the CLI's runtime would entangle every CLI with `op`'s availability, version compatibility, and account configuration. The canonical boundary is installer-time: installers translate from external secret managers into the OS keyring, and the CLI reads from the OS keyring. `set-credential` is the preferred automation primitive for that translation.
 
-A note on what credstore exposes: as of #23, `credstore` exposes only the five backends `keychain`, `wincred`, `secret-service`, `file`, `memory`. Whether to surface external secret managers (1Password / KeePassXC / `pass`) as additional native keyring backends is tracked in #24 and out of scope here. The `set-credential` installer-time guidance above stays the canonical path regardless.
+A note on what credstore exposes: as of #23, `credstore` exposes only the five backends `keychain`, `wincred`, `secret-service`, `file`, `memory`. Surfacing external secret managers (1Password / KeePassXC / `pass`) as additional *native* keyring backends — which would make them runtime-visible to the CLI through credstore — is tracked in #24. If #24 lands, the "default path" above stays the recommendation for most users; the new native backends are an opt-in alternative for users who specifically want runtime resolution and accept the per-backend availability/version coupling.
 
 ## §1.11 Compliance criteria
 

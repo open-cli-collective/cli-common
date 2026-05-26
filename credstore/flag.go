@@ -5,14 +5,20 @@ package credstore
 // flag package and no cobra. Each downstream CLI registers its own
 // --backend flag using BackendFlagName / BackendFlagUsage and validates
 // the value with ParseBackend (or routes both flag + config values
-// through BindBackendFlag).
+// through BindBackendFlag). Invalid backend values returned by either
+// helper wrap ErrBackendNotImplemented; the nil-opts guard on
+// BindBackendFlag is a separate programmer-error signal that does not.
 //
 // Wiring contract (downstream CLIs):
 //  1. Register --backend using BackendFlagName / BackendFlagUsage.
 //  2. Load config; read the keyring.backend string (empty if unset).
-//  3. Call BindBackendFlag(&opts, flagString, configString). The single
+//  3. Call BindBackendFlag(&opts, flagValue, flagSet, configValue),
+//     passing flagSet=true exactly when the user actually supplied the
+//     flag (e.g. cmd.Flags().Changed("backend") in cobra). The single
 //     call validates the flag value and populates opts.Backend +
-//     opts.ConfigBackend. Returned errors wrap ErrBackendNotImplemented.
+//     opts.ConfigBackend. Invalid backend values (including an
+//     explicit empty --backend=) return an error wrapping
+//     ErrBackendNotImplemented with opts untouched.
 //  4. Do NOT read <SERVICE>_KEYRING_BACKEND directly — credstore reads
 //     it in selectBackend. Setting opts.Backend from that env var would
 //     corrupt SourceEnv attribution and silently change precedence.
@@ -83,7 +89,16 @@ func BackendEnvVar(service string) string {
 // configValue is passed through to opts.ConfigBackend unchanged —
 // credstore.Open will validate it during selection (so a stale config
 // value surfaces as a clean error at Open time, not silent acceptance).
-// Pass "" for either flagValue or configValue when not supplied.
+// Pass "" for configValue when no config-file value is set.
+//
+// flagSet must reflect whether the user actually supplied --backend on
+// the command line (typically cmd.Flags().Changed("backend") in cobra).
+// When flagSet is false, flagValue is ignored and opts.Backend is not
+// touched. When flagSet is true, flagValue must be a recognized backend
+// name; an explicit empty --backend= is rejected as fail-closed, not
+// silently treated as "no flag." This prevents an explicit empty flag
+// from silently falling through to lower-precedence env/config/auto
+// selection.
 //
 // On invalid flag input, opts is not mutated and the returned error
 // wraps ErrBackendNotImplemented.
@@ -93,11 +108,11 @@ func BackendEnvVar(service string) string {
 // and pass it here as flagValue — credstore reads that env var
 // directly in selectBackend, and remapping it would corrupt SourceEnv
 // attribution.
-func BindBackendFlag(opts *Options, flagValue, configValue string) error {
+func BindBackendFlag(opts *Options, flagValue string, flagSet bool, configValue string) error {
 	if opts == nil {
 		return fmt.Errorf("credstore: BindBackendFlag requires a non-nil *Options")
 	}
-	if flagValue != "" {
+	if flagSet {
 		b, err := ParseBackend(flagValue)
 		if err != nil {
 			return err
