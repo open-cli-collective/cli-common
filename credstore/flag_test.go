@@ -35,6 +35,41 @@ func TestParseBackend_Unknown(t *testing.T) {
 	}
 }
 
+// TestAllBackends_MatchesConstants is the drift guard between the
+// package-level Backend constants (declared in store.go) and the
+// allBackends slice that drives parseBackend, ValidBackendNames, and
+// BackendFlagUsage. Go has no reflection-based way to enumerate typed
+// const declarations, so this is a literal-list assertion: when #24
+// adds a new Backend constant, it must also be added to allBackends
+// AND to this test's expected slice. If only one of the three is
+// updated, this test fails.
+func TestAllBackends_MatchesConstants(t *testing.T) {
+	expected := []Backend{
+		BackendKeychain,
+		BackendWinCred,
+		BackendSecretService,
+		BackendFile,
+		BackendMemory,
+	}
+	if len(allBackends) != len(expected) {
+		t.Fatalf("allBackends has %d entries (%v); expected %d (%v) — if you added a Backend constant, update allBackends and this test in lock-step",
+			len(allBackends), allBackends, len(expected), expected)
+	}
+	for i, want := range expected {
+		if allBackends[i] != want {
+			t.Errorf("allBackends[%d] = %q, want %q", i, allBackends[i], want)
+		}
+	}
+	// Inverse: every Backend constant in expected must also parse via
+	// the existing parseBackend (which iterates allBackends). Catches a
+	// constant that exists but was removed from allBackends.
+	for _, want := range expected {
+		if _, ok := parseBackend(string(want)); !ok {
+			t.Errorf("parseBackend(%q) = (_, false); the constant exists but is not in allBackends", want)
+		}
+	}
+}
+
 func TestValidBackendNames_MatchesAllBackends(t *testing.T) {
 	names := ValidBackendNames()
 	if len(names) != len(allBackends) {
