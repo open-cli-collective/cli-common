@@ -425,6 +425,9 @@ func TestOpenOSBackend_PassOnWindows_FailsGracefully(t *testing.T) {
 // edit could silently drop the actionable text and tests would still
 // pass.
 func TestPreflightOSBackend_PassNotOnPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-empty preflight test is POSIX-only; the Windows branch returns the not-supported error before LookPath — see TestOpenOSBackend_PassOnWindows_FailsGracefully")
+	}
 	t.Setenv("PATH", "")
 
 	err := preflightOSBackend(BackendPass)
