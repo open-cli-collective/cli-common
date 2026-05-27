@@ -49,6 +49,7 @@ func TestAllBackends_MatchesConstants(t *testing.T) {
 		BackendWinCred,
 		BackendSecretService,
 		BackendFile,
+		BackendPass,
 		BackendMemory,
 	}
 	if len(allBackends) != len(expected) {
@@ -207,5 +208,17 @@ func TestBindBackendFlag_NilOpts(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "non-nil") {
 		t.Errorf("nil-opts error should mention non-nil requirement: %v", err)
+	}
+}
+
+// TestBackendFlagUsage_IncludesPass pins the user-visible --help text:
+// once pass is in the recognized set, BackendFlagUsage should mention
+// it. The downstream CLIs render this string in their --help, so
+// catching a regression here means we don't ship a broken --help via a
+// downstream go.mod bump.
+func TestBackendFlagUsage_IncludesPass(t *testing.T) {
+	usage := BackendFlagUsage()
+	if !strings.Contains(usage, "pass") {
+		t.Errorf("BackendFlagUsage() should mention pass; got %q", usage)
 	}
 }

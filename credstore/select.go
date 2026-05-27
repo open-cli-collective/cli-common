@@ -73,6 +73,7 @@ var allBackends = []Backend{
 	BackendWinCred,
 	BackendSecretService,
 	BackendFile,
+	BackendPass,
 	BackendMemory,
 }
 

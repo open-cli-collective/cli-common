@@ -3,6 +3,7 @@ package credstore
 import (
 	"errors"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -337,5 +338,77 @@ func TestOSKeyringBackendsGated(t *testing.T) {
 	}
 	if err := s.Delete("default", "tok"); err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+}
+
+// TestBuildKeyringConfig_PassSetsPrefixToService pins the per-service
+// PassPrefix wiring that gives every cli-common consumer its own subtree
+// under ~/.password-store. Without this, two CLIs writing the same key
+// name (e.g. "api_token") would collide silently — ByteNess's pass
+// backend ignores ServiceName and looks up items at
+// filepath.Join(PassDir, PassPrefix, key) + ".gpg".
+func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
+	emptyEnv := func(string) string { return "" }
+
+	t.Run("pass: prefix scoped to first service", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendPass, "atlassian-cli", &Options{}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig: %v", err)
+		}
+		if cfg.PassPrefix != "atlassian-cli" {
+			t.Errorf("PassPrefix = %q, want %q", cfg.PassPrefix, "atlassian-cli")
+		}
+	})
+
+	t.Run("pass: prefix scoped to second service", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendPass, "slack-chat-api", &Options{}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig: %v", err)
+		}
+		if cfg.PassPrefix != "slack-chat-api" {
+			t.Errorf("PassPrefix = %q, want %q", cfg.PassPrefix, "slack-chat-api")
+		}
+	})
+
+	t.Run("file: prefix is NOT set", func(t *testing.T) {
+		// The file backend needs a passphrase source or it fails before
+		// returning a cfg; provide one via the per-service env var.
+		getenv := func(k string) string {
+			if k == "XDG_DATA_HOME" {
+				return t.TempDir()
+			}
+			if k == "ATLASSIAN_CLI_KEYRING_PASSPHRASE" {
+				return "test-passphrase"
+			}
+			return ""
+		}
+		cfg, err := buildKeyringConfig(BackendFile, "atlassian-cli", &Options{}, getenv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig file: %v", err)
+		}
+		if cfg.PassPrefix != "" {
+			t.Errorf("PassPrefix = %q, want empty for file backend", cfg.PassPrefix)
+		}
+		if cfg.FileDir == "" {
+			t.Errorf("FileDir is empty; expected file backend to set it")
+		}
+	})
+}
+
+// TestOpenOSBackend_PassOnWindows_FailsGracefully pins the Windows
+// behavior: byteness/keyring's pass.go is `//go:build !windows`, so a
+// user reading our docs and trying `--backend pass` on Windows will hit
+// the not-registered path inside ByteNess. We want a sensible error
+// (named, errors.As-able) rather than a panic. Skipped on non-Windows.
+func TestOpenOSBackend_PassOnWindows_FailsGracefully(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only")
+	}
+	_, err := openOSBackend(BackendPass, "credstore-passtest", &Options{}, os.Getenv)
+	if err == nil {
+		t.Fatal("openOSBackend(pass) on windows: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "pass") {
+		t.Errorf("error should name the backend; got %q", err.Error())
 	}
 }

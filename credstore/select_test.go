@@ -102,3 +102,18 @@ func TestSelectBackendMemoryNeverAuto(t *testing.T) {
 		}
 	}
 }
+
+// TestParseBackend_RecognizesPass is cheap insurance against a future
+// iterator regression in parseBackend: the lockstep test already pins
+// that allBackends matches the declared constants, but a separate
+// assertion on the public surface keeps a name we documented from
+// silently disappearing.
+func TestParseBackend_RecognizesPass(t *testing.T) {
+	b, ok := parseBackend("pass")
+	if !ok {
+		t.Fatal("parseBackend(\"pass\") = (_, false); want true")
+	}
+	if b != BackendPass {
+		t.Errorf("parseBackend(\"pass\") = %q, want %q", b, BackendPass)
+	}
+}

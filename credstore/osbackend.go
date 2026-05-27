@@ -25,30 +25,54 @@ type osKeyringBackend struct {
 
 // openOSBackend opens exactly the selected backend. AllowedBackends is
 // pinned to the single chosen type so the library never re-prioritizes
-// after our §1.4 selection. The file backend additionally needs a
-// directory and a passphrase source.
+// after our §1.4 selection. Per-backend construction (file dir +
+// passphrase, pass per-service prefix) lives in buildKeyringConfig.
 func openOSBackend(kind Backend, service string, opts *Options, getenv func(string) string) (backend, error) {
-	cfg := keyring.Config{
-		ServiceName:     service,
-		AllowedBackends: []keyring.BackendType{keyring.BackendType(kind)},
-	}
-	if kind == BackendFile {
-		dir, err := fileKeyringDir(service, getenv)
-		if err != nil {
-			return nil, err
-		}
-		cfg.FileDir = dir
-		pwFunc, err := filePasswordFunc(service, opts, getenv)
-		if err != nil {
-			return nil, err
-		}
-		cfg.FilePasswordFunc = pwFunc
+	cfg, err := buildKeyringConfig(kind, service, opts, getenv)
+	if err != nil {
+		return nil, err
 	}
 	kr, err := keyring.Open(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
 	}
 	return &osKeyringBackend{kr: kr, backendKind: kind}, nil
+}
+
+// buildKeyringConfig assembles the keyring.Config for the chosen backend.
+// Extracted from openOSBackend so per-backend wiring is unit-testable
+// without opening a real keyring.
+func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func(string) string) (keyring.Config, error) {
+	cfg := keyring.Config{
+		ServiceName:     service,
+		AllowedBackends: []keyring.BackendType{keyring.BackendType(kind)},
+	}
+	switch kind {
+	case BackendFile:
+		dir, err := fileKeyringDir(service, getenv)
+		if err != nil {
+			return keyring.Config{}, err
+		}
+		cfg.FileDir = dir
+		pwFunc, err := filePasswordFunc(service, opts, getenv)
+		if err != nil {
+			return keyring.Config{}, err
+		}
+		cfg.FilePasswordFunc = pwFunc
+	case BackendPass:
+		// ByteNess's pass backend ignores ServiceName — items are
+		// stored at filepath.Join(PassDir, PassPrefix, key) + ".gpg"
+		// (see byteness/keyring/pass.go). Without a per-service
+		// PassPrefix every cli-common consumer would share a flat
+		// ~/.password-store namespace and collide on identical key
+		// names. Scope the prefix to the service so each CLI gets
+		// its own subtree.
+		cfg.PassPrefix = service
+	case BackendKeychain, BackendWinCred, BackendSecretService, BackendMemory:
+		// No additional construction — ByteNess uses ServiceName
+		// directly for these.
+	}
+	return cfg, nil
 }
 
 // fileKeyringDir is the encrypted-file backend location and the test
