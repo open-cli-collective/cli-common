@@ -169,7 +169,7 @@ No CLI ships `--profile` today. Reserving the name now prevents painting ourselv
 - `<tool> refresh <resource>` refreshes one named cache (e.g., `jtk refresh users`).
 - `<tool> refresh --status` reports freshness + age with no network calls.
 
-Only jtk ships `refresh` today (`atlassian-cli/tools/jtk/internal/cmd/refresh/refresh.go`); other CLIs have no caches to refresh. Codifying the signature here so that when another CLI grows a cache, the command shape is already standardized.
+**Current state:** jtk ships the top-level `refresh` subcommand (`atlassian-cli/tools/jtk/internal/cmd/refresh/refresh.go`); gro ships a cli-common-backed cache (`google-readonly/internal/cache/cache.go`) but exposes invalidation as a per-command `--refresh` flag (e.g., `gro drive drives --refresh` at `google-readonly/internal/cmd/drive/drives.go:106`) rather than a top-level subcommand — divergence from `working-with-state.md` §4.6's signature. slck, sfdc, nrq, cfl have no caches. Codifying the signature here so future CLIs grow caches with the standardized shape.
 
 ---
 
@@ -191,6 +191,8 @@ The new docs are forward-looking. Scriptability divergences:
 - **`jtk init` accepts `--token <value>` for the API token** (`atlassian-cli/tools/jtk/internal/cmd/initcmd/initcmd.go:64`) — flag-passed plaintext secret, violates §2 and `working-with-secrets.md` §1.5.1.
 - **`cfl init` has no secret-ingress flags at all** (`atlassian-cli/tools/cfl/internal/cmd/init/init.go:161`) — non-interactive ingress requires the separate `cfl set-credential` command; the wizard itself is not flag-skippable.
 - **`sfdc` has no `set-credential` command** — secret ingress is only available via the interactive OAuth flow inside `sfdc init`. Installer scripts have no scriptable bypass at all.
+- **`set-credential` flag surface diverges across the family.** `working-with-secrets.md` §1.5.2 specifies `--ref`, `--key`, `--stdin`/`--from-env`, `--overwrite`, and `--json`. nrq ships all of these except `--json` (`newrelic-cli/internal/cmd/configcmd/config.go:76-80`). jtk/cfl ship ONLY `--from-env` (`atlassian-cli/tools/jtk/internal/cmd/setcredential/setcredential.go:42`, `atlassian-cli/tools/cfl/internal/cmd/setcredential/setcredential.go:42`) — stdin is implicit when `--from-env` is absent, `--ref`/`--key` are not registered (single hardcoded `api_token` in the shared atlassian-cli bundle), no `--overwrite`, no `--json`. New CLIs MUST ship the full §1.5.2 surface.
+- **`gro` ships a cli-common cache but no top-level `refresh` subcommand.** Cache invalidation is exposed via per-command `--refresh` flags (e.g., `gro drive drives --refresh` at `google-readonly/internal/cmd/drive/drives.go:106`); divergence from `working-with-state.md` §4.6.
 - **`slck me` returns nil with no tokens** (`slack-chat-api/internal/cmd/me/me.go:101-105`) — fails the §3.1 health-check contract; a script doing `slck me || install_credentials` will skip the install.
 - **No CLI implements the §3.2 exit-code taxonomy.** Most roots collapse `Execute()` errors to exit 1. Backfilling requires the typed-error layer described in §3.2.
 - **No CLI implements `--profile`.** Reserved per §6; no implementation expected until codereview or a multi-tenant atlassian-cli refresh forces the issue.

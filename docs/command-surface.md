@@ -234,7 +234,7 @@ Subcommands use `ls` for `list` and `rm` for `delete` where established. Do not 
 
 The new docs are forward-looking. The following current divergences from this standard are called out here so a future audit knows what to fix, and so a new CLI does not cargo-cult the divergence. Filing migration tickets for these is a separate workstream — out of scope for this doc.
 
-- **`jtk init --token <value>`** (`atlassian-cli/tools/jtk/internal/cmd/initcmd/initcmd.go:64`) — flag-passed plaintext secret, violates `working-with-secrets.md` §1.5.1. The sanctioned ingress is `jtk set-credential --stdin` or `--from-env`.
+- **`jtk init --token <value>`** (`atlassian-cli/tools/jtk/internal/cmd/initcmd/initcmd.go:64`) — flag-passed plaintext secret, violates `working-with-secrets.md` §1.5.1. The sanctioned ingress is `jtk set-credential` (stdin by default, or `--from-env <VAR>`).
 - **`jtk init` always runs the huh form** (`atlassian-cli/tools/jtk/internal/cmd/initcmd/initcmd.go:219`) — the wizard is not flag-skippable; violates §4.1's scriptable-skip rule.
 - **`cfl init` has no `--token-stdin` / `--token-from-env`** (`atlassian-cli/tools/cfl/internal/cmd/init/init.go:161`) — only the huh form ingests the token; non-interactive ingress requires the separate `cfl set-credential` command, so the wizard itself is not flag-skippable for the token field. Violates §4.1's scriptable-skip rule.
 - **`sfdc` has no `set-credential` command** — only secret ingress is the interactive OAuth flow inside `sfdc init`. Violates `working-with-secrets.md` §1.5.2 and §4.1's scriptable-skip rule.
