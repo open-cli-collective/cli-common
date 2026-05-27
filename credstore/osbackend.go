@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/byteness/keyring"
 )
@@ -50,9 +51,24 @@ func openOSBackend(kind Backend, service string, opts *Options, getenv func(stri
 // "pass program is not available" from the pass opener is lost and the
 // user sees a generic "Specified keyring backend not available". Catch
 // the common cases here so users get actionable messages.
+//
+// When adding a new Backend constant, decide whether it needs a
+// preflight check (cheap pre-construction validation that produces a
+// better error than ByteNess's generic one), or whether ByteNess's own
+// opener error is already actionable enough.
 func preflightOSBackend(kind Backend) error {
 	switch kind {
 	case BackendPass:
+		// byteness/keyring/pass.go is `//go:build !windows`. Catch the
+		// Windows case before LookPath: a Windows user with a `pass`
+		// shim on PATH (Git-for-Windows, WSL bridge) would otherwise
+		// pass preflight and then hit a generic ByteNess "backend not
+		// available" message from keyring.Open. Surface the platform
+		// constraint directly with no install hints (those are Linux/
+		// macOS-specific and would be misleading on Windows).
+		if runtime.GOOS == "windows" {
+			return fmt.Errorf("the pass backend is not supported on Windows; use --backend wincred (default) or --backend file")
+		}
 		if _, err := exec.LookPath("pass"); err != nil {
 			return fmt.Errorf("the pass(1) CLI is not on $PATH; install it (e.g. `apt install pass` / `brew install pass`) and run `pass init <gpg-key-id>` before selecting --backend pass")
 		}

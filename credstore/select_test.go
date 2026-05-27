@@ -117,3 +117,26 @@ func TestParseBackend_RecognizesPass(t *testing.T) {
 		t.Errorf("parseBackend(\"pass\") = %q, want %q", b, BackendPass)
 	}
 }
+
+// TestSelectBackendPassNeverAuto mirrors the BackendMemory contract:
+// pass is selectable explicitly / via env / via config, but never via
+// auto. A future selectBackend refactor that started auto-picking pass
+// on systems that happen to have the binary installed would be a stealth
+// security regression (silent backend change), so pin the contract.
+func TestSelectBackendPassNeverAuto(t *testing.T) {
+	if b, src, err := selectBackend("svc", &Options{Backend: BackendPass}, envFrom(nil), "linux"); err != nil || b != BackendPass || src != SourceExplicit {
+		t.Fatalf("explicit pass = (%q,%q,%v), want (pass,explicit,nil)", b, src, err)
+	}
+	for _, goos := range []string{"darwin", "windows", "linux"} {
+		b, src, err := selectBackend("svc", &Options{}, envFrom(nil), goos)
+		if err != nil {
+			continue // some goos may legitimately error in auto (e.g. unknown)
+		}
+		if b == BackendPass {
+			t.Fatalf("auto on %s selected pass; pass must be opt-in only", goos)
+		}
+		if src != SourceAuto {
+			t.Fatalf("auto %s src = %q, want auto", goos, src)
+		}
+	}
+}

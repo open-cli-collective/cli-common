@@ -396,10 +396,13 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 }
 
 // TestOpenOSBackend_PassOnWindows_FailsGracefully pins the Windows
-// behavior: byteness/keyring's pass.go is `//go:build !windows`, so a
-// user reading our docs and trying `--backend pass` on Windows will hit
-// the not-registered path inside ByteNess. We want a sensible error
-// (named, errors.As-able) rather than a panic. Skipped on non-Windows.
+// behavior end-to-end: a user trying `--backend pass` on Windows must
+// get a sensible error (named, no panic) rather than the generic
+// ByteNess "backend not available" message. The error actually
+// originates in preflightOSBackend's runtime.GOOS == "windows" guard,
+// not from ByteNess's !windows opener registration — the preflight
+// fires first so the platform constraint is the user-visible reason.
+// Skipped on non-Windows.
 func TestOpenOSBackend_PassOnWindows_FailsGracefully(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows-only")
