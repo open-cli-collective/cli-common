@@ -54,8 +54,7 @@ consumer CLIs, see `docs/working-with-state.md` §6 and §7 and
 make check   # tidy + lint + test
 ```
 
-Requires Go 1.24+ and `golangci-lint` (v2). The module is standard-library
-only; there is no `go.sum`.
+Requires Go 1.26+ and `golangci-lint` (v2).
 
 ## License
 
