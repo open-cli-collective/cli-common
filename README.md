@@ -12,13 +12,24 @@ the source of truth for how Collective CLIs handle secrets and credentials.
 ## Standards
 
 The Collective's cross-CLI standards are versioned here, alongside the code
-they govern, so consumers pin them with the same module version:
+they govern, so consumers pin them with the same module version. See
+[`docs/README.md`](docs/README.md) for a one-line "use this when…" index:
 
 - [`docs/working-with-secrets.md`](docs/working-with-secrets.md) — secret
   state (OS keyring; implemented by `credstore`).
 - [`docs/working-with-state.md`](docs/working-with-state.md) — **non-secret**
   on-disk state (config + cache) and its rollout plan; companion pillar to
   the secrets standard.
+- [`docs/command-surface.md`](docs/command-surface.md) — command-tree shape:
+  verbs, positional-vs-flag, mutation safety, prompt classes, async, flag
+  conventions.
+- [`docs/output-and-rendering.md`](docs/output-and-rendering.md) — what a
+  command prints: text-first, `--id`/`--extended`/`--fulltext`/`--fields`,
+  tables, key:value blocks, ISO-8601, stream discipline, JSON scope, the
+  data ↔ presentation seam.
+- [`docs/scriptability.md`](docs/scriptability.md) — installer-script
+  ergonomics: `init` wizard parity, `--non-interactive`, exit codes,
+  browser-open, `--profile` reservation.
 
 Tracking: epic **INT-310** (Get Claude desktop working for people).
 
