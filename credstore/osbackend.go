@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/byteness/keyring"
@@ -28,6 +29,9 @@ type osKeyringBackend struct {
 // after our §1.4 selection. Per-backend construction (file dir +
 // passphrase, pass per-service prefix) lives in buildKeyringConfig.
 func openOSBackend(kind Backend, service string, opts *Options, getenv func(string) string) (backend, error) {
+	if err := preflightOSBackend(kind); err != nil {
+		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
+	}
 	cfg, err := buildKeyringConfig(kind, service, opts, getenv)
 	if err != nil {
 		return nil, err
@@ -37,6 +41,26 @@ func openOSBackend(kind Backend, service string, opts *Options, getenv func(stri
 		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
 	}
 	return &osKeyringBackend{kr: kr, backendKind: kind}, nil
+}
+
+// preflightOSBackend runs cheap, actionable pre-construction checks for
+// backends whose ByteNess opener returns a useful error message that
+// keyring.Open then swallows. ByteNess's Open iterates AllowedBackends
+// and `continue`s past any opener that returns an error, so a useful
+// "pass program is not available" from the pass opener is lost and the
+// user sees a generic "Specified keyring backend not available". Catch
+// the common cases here so users get actionable messages.
+func preflightOSBackend(kind Backend) error {
+	switch kind {
+	case BackendPass:
+		if _, err := exec.LookPath("pass"); err != nil {
+			return fmt.Errorf("the pass(1) CLI is not on $PATH; install it (e.g. `apt install pass` / `brew install pass`) and run `pass init <gpg-key-id>` before selecting --backend pass")
+		}
+	case BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory:
+		// No preflight check — ByteNess's openers (or store.Open's
+		// memory short-circuit) already return actionable errors.
+	}
+	return nil
 }
 
 // buildKeyringConfig assembles the keyring.Config for the chosen backend.
@@ -68,9 +92,14 @@ func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func
 		// names. Scope the prefix to the service so each CLI gets
 		// its own subtree.
 		cfg.PassPrefix = service
-	case BackendKeychain, BackendWinCred, BackendSecretService, BackendMemory:
+	case BackendKeychain, BackendWinCred, BackendSecretService:
 		// No additional construction — ByteNess uses ServiceName
 		// directly for these.
+	case BackendMemory:
+		// BackendMemory short-circuits in store.Open before reaching
+		// openOSBackend; this arm exists only to keep the exhaustive
+		// switch honest. If a future change starts routing memory
+		// through here, no extra construction is needed.
 	}
 	return cfg, nil
 }
