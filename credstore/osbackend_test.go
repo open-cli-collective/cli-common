@@ -412,3 +412,42 @@ func TestOpenOSBackend_PassOnWindows_FailsGracefully(t *testing.T) {
 		t.Errorf("error should name the backend; got %q", err.Error())
 	}
 }
+
+// TestPreflightOSBackend_PassNotOnPath pins the actionable error
+// contract for the pass(1) preflight check. We deterministically force
+// LookPath to fail by emptying $PATH for the duration of the test
+// (t.Setenv restores it). The message must name the install hint
+// (apt/brew) and the `pass init` follow-up step so users hit the
+// preflight know exactly what to do — without this assertion a future
+// edit could silently drop the actionable text and tests would still
+// pass.
+func TestPreflightOSBackend_PassNotOnPath(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	err := preflightOSBackend(BackendPass)
+	if err == nil {
+		t.Fatal("preflightOSBackend(BackendPass) with empty PATH: want error, got nil")
+	}
+	msg := err.Error()
+	for _, want := range []string{"pass", "PATH", "install", "pass init"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("preflight error missing %q hint; got %q", want, msg)
+		}
+	}
+}
+
+// TestPreflightOSBackend_NonPassBackendsSkipPreflight asserts that the
+// preflight is a no-op for every non-pass backend in the recognized
+// set, even with an empty PATH. Prevents a future change to
+// preflightOSBackend from accidentally gating an OS keyring on a CLI
+// binary it doesn't need.
+func TestPreflightOSBackend_NonPassBackendsSkipPreflight(t *testing.T) {
+	t.Setenv("PATH", "")
+	for _, kind := range []Backend{
+		BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory,
+	} {
+		if err := preflightOSBackend(kind); err != nil {
+			t.Errorf("preflightOSBackend(%q) = %v, want nil — non-pass backends must not preflight", kind, err)
+		}
+	}
+}
