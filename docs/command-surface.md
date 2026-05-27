@@ -38,7 +38,7 @@ A small, fixed verb set with specific meanings. Pick the right verb and the user
 - `delete` destroys; `remove` detaches. They are NOT synonyms. `dashboards gadgets remove` does not delete the gadget definition — it removes it from a dashboard. `attachments delete` actually destroys the attachment.
 - The presence of a `restore` sibling signals soft-delete (`projects delete` → `projects restore`). Hard-delete commands have no `restore` sibling and document irreversibility in their description.
 - `<resource> types` always means "list the valid values for `--type` on `create`/`update` of this resource" (`projects types`, `links types`, `issues types`).
-- `set`/`unset`/`reset` are NOT in the verb set for resource operations. Use `update` (with explicit flags) or `delete`. The one exception: `<tool> config set` for non-secret config writes is allowed (nrq uses this at `newrelic-cli/internal/cmd/configcmd/config.go:160`).
+- `set`/`unset`/`reset` are NOT in the verb set for resource operations. Use `update` (with explicit flags) or `delete`. The one exception: `<tool> config set` for non-secret config writes is allowed (nrq uses this at `newrelic-cli/internal/cmd/configcmd/config.go:160`). `<tool> set-credential` (per `working-with-secrets.md` §1.5.2) is a compound command name, not an application of the `set` verb, and the prohibition does not apply.
 
 Tool-specific spec example: jtk's full verb decisions live at `atlassian-cli/tools/jtk/internal/cmd/GUARDRAILS.md` §1.
 
@@ -74,7 +74,7 @@ Where the upstream service has both human-readable names and canonical IDs (Jira
 
 - Unique match → resolve silently.
 - Ambiguous → fail, listing all matches with disambiguating identifiers.
-- No match + looks like a raw ID → pass through unchanged (the upstream will 404 with a clearer error than ours).
+- No match + looks like a raw ID (per the upstream's documented ID format — Jira's `PROJ-123`, Salesforce's 15/18-char IDs, Slack's `C/U/G`-prefixed channel/user IDs, etc.) → pass through unchanged (the upstream will 404 with a clearer error than ours). Each CLI documents its accepted ID shapes in its tool-specific spec.
 - No match + looks like a name → fail with a hint to refresh the relevant cache (`<tool> refresh <resource>`, per `working-with-state.md` §4.6).
 
 Reference: jtk's `resolve.New(client).Board(ctx, args[0])` at `atlassian-cli/tools/jtk/internal/cmd/boards/boards.go:176`; slck's `c.ResolveChannel(channel)` at `slack-chat-api/internal/cmd/channels/get.go:35`.
@@ -103,7 +103,7 @@ Corollaries:
 
 Credential and keyring writes use **`--overwrite`** per `working-with-secrets.md` §1.5.1 — a single, narrowly-scoped meaning: "the keyring entries I'm about to write may already exist; replace them instead of failing." It does not suppress prompts elsewhere, does not lower verification strictness, does not affect file overwrite behavior outside the keyring.
 
-**New CLIs MUST use `--overwrite` for credential replacement, not `--force`.** `--force` is NOT a canonical synonym; it survives only as a compatibility alias on CLIs where it predates the §1.5.1 rule, and the secrets doc names it as a legacy alias rather than a standard form.
+**New CLIs MUST use `--overwrite` for credential replacement, not `--force`.** `--force` is NOT a canonical synonym; it survives only as a compatibility alias on CLIs where it predates the §1.5.1 rule. From `working-with-secrets.md` §1.5.1: "`--overwrite` (preferred name; `--force` is the legacy alias)" — `--overwrite` is the standard form for new code.
 
 **The two flags MUST NOT be conflated:**
 - A resource-mutation `--force` does NOT lower keyring-write strictness — `<tool> issues delete --force` does not let `<tool> init` overwrite a credential.
@@ -120,7 +120,7 @@ The family has **exactly two** kinds of interactive prompt. They are distinct in
 ### §4.1 Setup wizards
 
 - **Where:** `<tool> init` only.
-- **Library:** `charmbracelet/huh` is the canonical choice (jtk, cfl, gro, sfdc) — but the family also has hand-rolled wizards using `bufio` + `golang.org/x/term` (slck at `slack-chat-api/internal/cmd/initcmd/init.go`, nrq at `newrelic-cli/internal/cmd/initcmd/init.go`). Either is acceptable; the contract below is what matters.
+- **Library:** Two implementations are conformant. `charmbracelet/huh` is the family's most common choice (jtk, cfl, gro, sfdc) and is appropriate for any new wizard with more than two or three prompts. Hand-rolled prompts using `bufio` + `golang.org/x/term` (slck at `slack-chat-api/internal/cmd/initcmd/init.go`, nrq at `newrelic-cli/internal/cmd/initcmd/init.go`) are appropriate when the wizard is one or two prompts and pulling in a TUI library would be overweight. The contract below is what matters; library choice does not affect conformance.
 - **Purpose:** First-time configuration — collect non-secret connection values, optionally bridge a secret into the keyring, write the config file, smoke-test the connection.
 - **Scriptable skip:** Every wizard input MUST have a corresponding non-interactive equivalent flag, AND the wizard MUST detect a non-interactive environment and bail. See `scriptability.md` §1.
 - **Anti-pattern:** Running the wizard regardless of supplied flags — e.g., `jtk init` at `atlassian-cli/tools/jtk/internal/cmd/initcmd/initcmd.go:219` always invokes `form.Run()` even when every flag value is supplied. The wizard is not flag-skippable; that is the divergence.
@@ -156,7 +156,7 @@ Any default-true boolean MUST:
 
 ## §6 Async operations
 
-For operations that are async on the upstream side (currently only `jtk issues move`):
+For operations that are async on the upstream side (`jtk issues move` is the family's illustrative example):
 
 - The originating command takes `--wait` (default true) and runs synchronously by default.
 - Passing `--no-wait` returns immediately with a task ID.
@@ -180,7 +180,7 @@ Setter flags on `create`/`update` commands take short aliases. Conventional lett
 | `-k` | `--key` |
 | `-l` | `--lead` |
 | `-a` | `--assignee` |
-| `-b` | `--body` (or `--board` in scoping context — never co-occurring) |
+| `-b` | `--body` is the canonical `-b` binding; `--board` may take `-b` in scoping context (e.g., `boards`, `sprints` commands) where `--body` is absent. If a single command ever needs both, `--body` keeps `-b` and `--board` becomes long-only. |
 | `-V` | `--value` |
 | `-c` | `--context` |
 | `-f` | `--field` (repeatable `key=value`) |

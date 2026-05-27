@@ -72,7 +72,7 @@ New CLIs MUST implement both `init` (for first-time setup of multiple values at 
 ### §3.1 Normative now
 
 - **`<tool> me` MUST exit non-zero on auth failure or unreachable upstream.** This is the scripted health-check contract. nrq is the only CLI that currently enforces this (`newrelic-cli/internal/cmd/me/me.go:80-89`); slck `me` returns nil even with no tokens configured (`slack-chat-api/internal/cmd/me/me.go:101-105`) — divergence.
-- **`<tool> set-credential` exits 0 on success and emits a distinct exit code per failure class** (existing key + no `--overwrite`, disallowed key, keyring write error, locked keyring per `working-with-secrets.md` §1.4), per `working-with-secrets.md` §1.5.2.
+- **`<tool> set-credential` exits 0 on success and non-zero per failure class** — the specific failure classes are enumerated in `working-with-secrets.md` §1.5.2 (existing key + no `--overwrite`, disallowed key, keyring write error, locked keyring per §1.4). New CLIs SHOULD map these to the §3.2 taxonomy where applicable (existing-without-overwrite ≈ 1/generic, disallowed key ≈ 2/usage error, keyring write/locked ≈ 3/auth-config), but the precise code-per-class mapping is advisory until §3.2 becomes normative; the binary success/failure contract is what scripts can rely on today.
 
 ### §3.2 Recommended target (advisory)
 
@@ -122,7 +122,10 @@ The shape:
 ```go
 authURL := auth.GetAuthURL(oauthCfg)
 if !opts.authCodeStdin && !opts.noBrowser {
-    open, _ := d.Prompter.ConfirmOpenBrowser()
+    open, err := d.Prompter.ConfirmOpenBrowser()
+    if err != nil {
+        return fmt.Errorf("confirm browser open: %w", err)
+    }
     if open {
         if err := d.OpenBrowser(authURL); err != nil {
             d.View.Info("Could not open browser automatically (%v).", err)

@@ -27,7 +27,9 @@ Companion pillars:
 
 ## §2 JSON scope
 
-JSON is **default-off for resource read output** — lists, gets, searches, the bulk of an agent's daily traffic. New CLIs MUST NOT add `-o json` or `--json` to resource reads. The contextually-rich pipe-delimited / key:value text format (per §4) is the default *and* the only format for that surface.
+JSON is **default-off for upstream resource read output** — lists/gets/searches that hit the upstream service for the user's actual work (Jira issues, Confluence pages, Slack channels, Salesforce records). New CLIs MUST NOT add `-o json` or `--json` to those commands. The contextually-rich pipe-delimited / key:value text format (per §4) is the default *and* the only format for that surface.
+
+This scope deliberately does NOT cover local-state reads (`config show`, `me`, diagnostic surfaces) — those are control-plane outputs and follow the table below.
 
 JSON IS the natural format for **control-plane signals and round-trip payloads**, in the cases the other docs mandate:
 
@@ -46,14 +48,14 @@ The three-tier classification ("STANDARD TARGET" / "PARTIAL CURRENT PRECEDENT" /
 
 ## §3 Output-shape flags
 
-Four global flags form a coordinate system for "how should the result render?" — orthogonal to *what* is fetched. New list/get commands MUST support all four. All four are long-only (§ `command-surface.md` §7.2).
+Four global flags form a coordinate system for "how should the result render?" — orthogonal to *what* is fetched. New list/get commands MUST support all four **where the flag is meaningful for that output type**. `--fulltext` is a no-op (and SHOULD NOT be registered) on commands with no prose cells; `--fields` is a no-op on commands with no per-row column structure (e.g., commands that emit only an ID). All four are long-only (§ `command-surface.md` §7.2).
 
-- **`--id`** — emit only primary identifiers. Overrides `--extended` and `--fulltext`. Contract: machine-friendly output, one identifier per line, suitable for piping into `xargs`.
+- **`--id`** — emit only primary identifiers. Overrides ALL other output-shape flags including `--fields`. Contract: machine-friendly output, one identifier per line, suitable for piping into `xargs`.
 - **`--extended`** — widen the default column set with admin/schema/audit fields. Implies `--fulltext`.
 - **`--fulltext`** — disable truncation of prose cells (descriptions, comment bodies).
-- **`--fields <csv>`** — explicit column selection. Replaces the default set entirely. Accepts header labels, upstream field IDs, or human names; the flag handles input normalization.
+- **`--fields <csv>`** — explicit column selection. Replaces the default set entirely. Accepts header labels, upstream field IDs, or human names; matching is case-insensitive. Unknown field name → error listing the valid set for that resource. Empty CSV → falls back to the default set. When a `--fields` selection contains a prose column (descriptions, comment bodies) the column is truncated per §4.4 unless `--fulltext` is also passed.
 
-**Mental model:** there is a default column set → `--extended` widens it → `--fields` overrides the whole selection → `--id` short-circuits to identifiers only.
+**Mental model:** there is a default column set → `--extended` widens it → `--fields` overrides the whole selection → `--id` short-circuits to identifiers only and overrides everything above.
 
 Reference implementation of the projection registry pattern (the `--fields` machinery): `atlassian-cli/tools/jtk/internal/present/projection/spec.go` — per-presenter `Registry`, `ColumnSpec` with `Fetch` to derive the minimum upstream field set, alias / identity / extended flags.
 
@@ -207,7 +209,7 @@ The presenter takes typed Go values and returns rendered text — either as a pu
 
 Token efficiency starts at the data layer, not the presenter. When the upstream API supports server-side field selection (Jira's `?fields=`, Salesforce's `SELECT <cols>`), the data layer SHOULD use it — deserializing and discarding fields the presenter will not render is wasted work AND wasted tokens if any of those fields end up in error messages or logs.
 
-Guideline: if you are not sure whether a field will be needed, deserialize it; the presentation layer can choose to drop it. Over-fetching is a smaller mistake than under-fetching. But if a field is large (rendered descriptions, comment bodies, attachment payloads) and the command doesn't render it, **do** narrow at the data layer.
+Guideline: for small or unknown-size fields, prefer over-fetching — deserialize the field and let the presentation layer drop it. For large prose fields (rendered descriptions, comment bodies, attachment payloads, large blob columns), narrow at the data layer when the command does not render them. The cost asymmetry is what drives the split: a missed small field is a cheap re-fetch; an over-fetched comment thread can blow a context window in one call.
 
 ### §9.4 Provider abstraction
 

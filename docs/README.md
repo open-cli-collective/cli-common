@@ -1,6 +1,16 @@
 # cli-common standards
 
-Five normative documents define the surface every Open CLI Collective CLI ships. New CLIs implement to these. When the docs appear to conflict, the document that owns the surface wins — secrets-related claims defer to `working-with-secrets.md`; on-disk state claims defer to `working-with-state.md`.
+Five normative documents define the surface every Open CLI Collective CLI ships. New CLIs implement to these.
+
+**Conflict resolution order**, from highest to lowest authority:
+
+1. `working-with-secrets.md` (foundational, predates the rest)
+2. `working-with-state.md` (foundational, predates the rest)
+3. `command-surface.md` — owns command-tree shape and flag taxonomy
+4. `output-and-rendering.md` — owns what a command prints; defers to `command-surface.md` for what flags exist
+5. `scriptability.md` — synthesizes the others for installer-script use; defers to all four above for the rules it cross-refs
+
+When two docs appear to conflict, the one higher on the list wins. In practice this means: secrets/state win every time they touch a surface; command-surface decides flag NAMES; output-and-rendering decides what gets PRINTED; scriptability never invents new contracts, it composes existing ones.
 
 | Doc | Use this when… |
 |---|---|
