@@ -10,7 +10,7 @@ Five normative documents define the surface every Open CLI Collective CLI ships.
 4. `output-and-rendering.md` — owns what a command prints; defers to `command-surface.md` for what flags exist
 5. `scriptability.md` — synthesizes the others for installer-script use; defers to all four above for the rules it cross-refs
 
-When two docs appear to conflict, the one higher on the list wins. In practice this means: secrets/state win every time they touch a surface; command-surface decides flag NAMES; output-and-rendering decides what gets PRINTED; scriptability never invents new contracts, it composes existing ones.
+When two docs appear to conflict, the one higher on the list wins **on the surfaces that doc actually defines.** `working-with-secrets.md` governs credential ingress flags, keyring write behavior, and the `_migration` JSON envelope — not (for example) the verb chosen for a credential-rotation command, which remains `command-surface.md`'s domain. `working-with-state.md` governs config and cache layout, the `refresh` command's signature, hermetic test isolation — not output formatting of a `refresh --status` listing, which is `output-and-rendering.md`'s domain. The hierarchy decides which doc's stance prevails *within its own scope*; out-of-scope claims do not auto-win.
 
 | Doc | Use this when… |
 |---|---|

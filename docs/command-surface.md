@@ -10,7 +10,7 @@ Companion pillars:
 - `output-and-rendering.md` — output shape (`--id` / `--extended` / `--fulltext` / `--fields`), stdout/stderr discipline.
 - `scriptability.md` — `--non-interactive`, exit codes, `--profile`, installer-script ergonomics.
 
-This doc does not duplicate those — it cross-references them at the seams. **When this doc appears to conflict with `working-with-secrets.md`, the secrets doc wins** (it predates this one and is the source of truth for credential UX).
+This doc does not duplicate those — it cross-references them at the seams. **When this doc appears to conflict with `working-with-secrets.md` or `working-with-state.md`, those win** (they predate this one and are the source of truth for the surfaces they govern). See `docs/README.md` for the full conflict-resolution order.
 
 ---
 
@@ -66,7 +66,7 @@ The rule is **role-based**, not type-based. The same entity type appears positio
 
 `cobra.ExactArgs(1)` for single-resource commands (`<tool> issues get MON-123`). `cobra.MinimumNArgs(1)` is permitted for variadic batch reads (`jtk issues get MON-123 MON-124 MON-125` at `atlassian-cli/tools/jtk/internal/cmd/issues/get.go:34` uses `MinimumNArgs(1)` deliberately; the `Use:` declaration at `:24` shows the variadic shape). `cobra.ExactArgs(2)` for binary relations (sfdc's `record get <object> <id>` at `salesforce-cli/internal/cmd/recordcmd/get.go:26`).
 
-**Do NOT introduce a resource-identity flag** like `--issue-id`, `--page-id`, or `--key` for the primary subject. The positional is canonical across the family for view/get commands (verified across jtk, cfl, slck, gro, sfdc, nrq — 100% conformance). The `--id` output-shape flag (§ `output-and-rendering.md` §3) is unrelated; that flag controls rendering, not identification.
+**Do NOT introduce a resource-identity flag** like `--issue-id`, `--page-id`, or `--key` for the primary subject. The positional is canonical across the family for view/get commands (verified across jtk, cfl, slck, gro, sfdc, nrq — 100% conformance). The `--id` output-shape flag (`output-and-rendering.md` §3) is unrelated; that flag controls rendering, not identification.
 
 ### §2.4 Name-or-ID resolution
 
@@ -196,7 +196,7 @@ The lowercase/uppercase distinction between `-f` (`--field`) and `-F` (`--file`)
 
 - Output-shape flags (`--id`, `--extended`, `--fulltext`, `--fields`) — see `output-and-rendering.md` §3.
 - Pagination cursor (`--next-page-token`).
-- Safety flags (`--force`, `--overwrite`, `--non-interactive`).
+- Safety flags (`--force` on any risky mutation; `--overwrite` on credential writes only per `working-with-secrets.md` §1.5.1; `--non-interactive` on `init` only per `scriptability.md` §1.2 — NOT a global flag).
 - Boolean toggles (`--no-wait`, `--no-browser`, `--no-color`, `--no-verify`, `--show-components`, `--custom-fields`).
 - Enum filters (`--state`, `--auth-method`).
 - One-off operation knobs (`--to-project`, `--to-type`, `--cloud-id`).

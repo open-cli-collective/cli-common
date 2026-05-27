@@ -10,7 +10,7 @@ Companion pillars:
 - `working-with-secrets.md` — secret ingress (stdin / `--from-env`), `set-credential`, `--overwrite`. **This doc cross-refs the secrets doc rather than restating its rules.**
 - `working-with-state.md` — config + cache, the `refresh` command, migration-on-first-run.
 
-**When this doc appears to conflict with `working-with-secrets.md`, the secrets doc wins.**
+**When this doc appears to conflict with `working-with-secrets.md` or `working-with-state.md`, those win.** See `docs/README.md` for the full conflict-resolution order across all five docs.
 
 ---
 
@@ -32,10 +32,12 @@ A wizard that asks a question with no equivalent flag is non-conformant — ther
 
 Every `init` MUST support a non-interactive mode that prompts for nothing. The contract:
 
-- Triggered by either `--non-interactive` OR a non-TTY stdin.
-- When triggered, no prompts run, ever.
+- Triggered by either `--non-interactive` (registered on `init` only — see scope note below) OR a non-TTY stdin.
+- When triggered, no prompts run, ever — meaning no setup-wizard prompts. Safety confirmations on risky mutations are a separate concern; see `command-surface.md` §4.2 and §3.1.
 - If a required input is missing, fail with a message that names the equivalent flag.
 - Never silently skip a step that would have been prompted for.
+
+**Scope.** `--non-interactive` is an `init`-only flag. Mutation safety on non-init commands is gated by `--force` (`command-surface.md` §3.1), and the equivalent of "no TTY → no prompt" for safety confirmations is "fail with a `--force` hint" per `command-surface.md` §4.2. Do NOT register `--non-interactive` on any non-`init` command.
 
 Reference implementation (the gold standard): nrq's init combines `--non-interactive` (`newrelic-cli/internal/cmd/initcmd/init.go:77`) with `isTerminal(opts.Stdin)` (`:336-339`) into a `wantPrompt` gate (`:108`); missing input fails with a flag hint (`:156-159`). New CLIs should follow this shape.
 
@@ -64,6 +66,8 @@ Refer to `working-with-secrets.md` §1.5 — that doc is the source of truth. Su
 - No clipboard for secrets. The existing standard is stdin + env; clipboard for secrets is intentionally out of scope.
 
 New CLIs MUST implement both `init` (for first-time setup of multiple values at once) and `set-credential` (for credential rotation, `op run`–driven setup, MDM installers, and the multi-secret-stdin avoidance case). `sfdc` is missing `set-credential` today — that is the canonical divergence.
+
+`set-credential` MUST also ship `--json` from the start per `output-and-rendering.md` §2 (the secrets standard target). Cross-ref: `working-with-secrets.md` §1.5.2 specifies the JSON envelope shape (`{"ref":..., "key":..., "backend":..., "written":true}`) and exit-code-per-failure-class contract.
 
 ---
 
@@ -104,7 +108,7 @@ The contract (combining §3.1 with the output of `me`):
 - **Output** is the configured identity at the upstream (account ID, display name, email — whatever the upstream returns). On failure, a short error to stderr naming the failure class.
 - **Never echoes the secret.** Not in success output, not in error output.
 
-`config test` is a sibling command focused specifically on the connection (rather than the identity); both are conformant. A new CLI MAY ship either or both; only one needs to enforce the §3.1 exit-code contract — `me` is preferred because it answers "who am I?" at the same time as "am I working?"
+`config test` is a sibling command focused specifically on the connection (rather than the identity); both are conformant. A new CLI MUST ship `me` (so the §3.1 contract has a named target) and MAY additionally ship `config test`. `me` is preferred as the scripted health-check entry point because it answers "who am I?" at the same time as "am I working?"
 
 ---
 
@@ -128,13 +132,15 @@ if !opts.authCodeStdin && !opts.noBrowser {
     }
     if open {
         if err := d.OpenBrowser(authURL); err != nil {
-            d.View.Info("Could not open browser automatically (%v).", err)
+            fmt.Fprintf(stderr, "Could not open browser automatically (%v).\n", err)
         }
     }
 }
-d.View.Println("If your browser didn't open, paste this URL into it:")
-d.View.Println("")
-d.View.Println("  " + authURL)
+// The URL is a side-channel hint to the human, NOT primary command data —
+// route to stderr so a `RESULT=$(... init ...)` capture stays clean.
+fmt.Fprintln(stderr, "If your browser didn't open, paste this URL into it:")
+fmt.Fprintln(stderr)
+fmt.Fprintln(stderr, "  "+authURL)
 ```
 
 This is the only sanctioned mechanism for a CLI to invoke the user's GUI. CLIs should NOT use the same mechanism to open arbitrary resource URLs by default. cfl's `page view --web` (`atlassian-cli/tools/cfl/internal/cmd/page/view.go:104-111`) is an exception — opt-in via flag, never the default rendering path.

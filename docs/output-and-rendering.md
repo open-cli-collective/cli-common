@@ -48,14 +48,14 @@ The three-tier classification ("STANDARD TARGET" / "PARTIAL CURRENT PRECEDENT" /
 
 ## §3 Output-shape flags
 
-Four global flags form a coordinate system for "how should the result render?" — orthogonal to *what* is fetched. New list/get commands MUST support all four **where the flag is meaningful for that output type**. `--fulltext` is a no-op (and SHOULD NOT be registered) on commands with no prose cells; `--fields` is a no-op on commands with no per-row column structure (e.g., commands that emit only an ID). All four are long-only (§ `command-surface.md` §7.2).
+Four global flags form a coordinate system for "how should the result render?" — orthogonal to *what* is fetched. New list/get commands MUST support each flag **where it is meaningful for that command's output type**, and MUST NOT register a flag where it is a no-op (so `--help` accurately advertises the surface). The default-applicability is: `--id` MUST be supported on every list/get command; `--extended`/`--fulltext`/`--fields` are supported when there is corresponding surface (admin/schema columns, prose cells, per-row columns). A command MAY omit any of the three latter flags when the underlying data has no such surface (e.g., an ID-only listing). All four are long-only (cross-ref `command-surface.md` §7.2).
 
 - **`--id`** — emit only primary identifiers. Overrides ALL other output-shape flags including `--fields`. Contract: machine-friendly output, one identifier per line, suitable for piping into `xargs`.
 - **`--extended`** — widen the default column set with admin/schema/audit fields. Implies `--fulltext`.
 - **`--fulltext`** — disable truncation of prose cells (descriptions, comment bodies).
 - **`--fields <csv>`** — explicit column selection. Replaces the default set entirely. Accepts header labels, upstream field IDs, or human names; matching is case-insensitive. Unknown field name → error listing the valid set for that resource. Empty CSV → falls back to the default set. When a `--fields` selection contains a prose column (descriptions, comment bodies) the column is truncated per §4.4 unless `--fulltext` is also passed.
 
-**Mental model:** there is a default column set → `--extended` widens it → `--fields` overrides the whole selection → `--id` short-circuits to identifiers only and overrides everything above.
+**Mental model:** there is a default column set → `--extended` widens it → `--fields` overrides the whole selection → `--id` short-circuits to identifiers only and overrides everything above. **Truncation is independent of column selection:** `--extended` implies `--fulltext` regardless of whether `--fields` is also passed. `--fields` overrides only the column set, never the truncation behavior. To force truncation off while narrowing columns, use `--fields ... --fulltext`.
 
 Reference implementation of the projection registry pattern (the `--fields` machinery): `atlassian-cli/tools/jtk/internal/present/projection/spec.go` — per-presenter `Registry`, `ColumnSpec` with `Fetch` to derive the minimum upstream field set, alias / identity / extended flags.
 
@@ -70,6 +70,7 @@ Reference implementation of the projection registry pattern (the `--fields` mach
 - Empty/null values: `-`.
 - `--extended` adds columns; it does not replace default columns.
 - Sorted most-recent-first where time-ordered (sprints, releases, deploys, etc.).
+- **Separator collision:** the ` | ` triplet (space-pipe-space) is reserved. When a cell value contains it, the presentation layer MUST replace the embedded ` | ` with a single space (or a similar non-collision substitution) before emission. A naked `|` inside a value, surrounded by other characters, is fine — the triplet is the discriminator. Document the substitution choice per-CLI; do not silently mangle without telling the user.
 
 ```
 KEY | STATUS | TYPE | PTS | ASSIGNEE | SUMMARY
@@ -181,7 +182,7 @@ Reference: jtk's `resolve.New(client).Board/Sprint/User` at `atlassian-cli/tools
 
 ## §8 Color stance
 
-Production **resource output has no color.** New CLIs SHOULD NOT add color to list/get/search output.
+Production **resource output has no color.** New CLIs MUST NOT add color to list/get/search output.
 
 Color in **setup and diagnostic surfaces** — `init` wizards, `me`, `config test`, `config clear`, success/error glyphs on mutation confirmations — is acceptable and consistent with existing CLIs (jtk/cfl/sfdc/nrq use `fatih/color` decorators; gro uses `lipgloss`). Where any color is rendered, a `--no-color` flag MUST be supported and respected; `isatty` is NOT checked.
 
