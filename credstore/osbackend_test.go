@@ -3,6 +3,7 @@ package credstore
 import (
 	"errors"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -337,5 +338,122 @@ func TestOSKeyringBackendsGated(t *testing.T) {
 	}
 	if err := s.Delete("default", "tok"); err != nil {
 		t.Fatalf("Delete: %v", err)
+	}
+}
+
+// TestBuildKeyringConfig_PassSetsPrefixToService pins the per-service
+// PassPrefix wiring that gives every cli-common consumer its own subtree
+// under ~/.password-store. Without this, two CLIs writing the same key
+// name (e.g. "api_token") would collide silently — ByteNess's pass
+// backend ignores ServiceName and looks up items at
+// filepath.Join(PassDir, PassPrefix, key) + ".gpg".
+func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
+	emptyEnv := func(string) string { return "" }
+
+	t.Run("pass: prefix scoped to first service", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendPass, "atlassian-cli", &Options{}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig: %v", err)
+		}
+		if cfg.PassPrefix != "atlassian-cli" {
+			t.Errorf("PassPrefix = %q, want %q", cfg.PassPrefix, "atlassian-cli")
+		}
+	})
+
+	t.Run("pass: prefix scoped to second service", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendPass, "slack-chat-api", &Options{}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig: %v", err)
+		}
+		if cfg.PassPrefix != "slack-chat-api" {
+			t.Errorf("PassPrefix = %q, want %q", cfg.PassPrefix, "slack-chat-api")
+		}
+	})
+
+	t.Run("file: prefix is NOT set", func(t *testing.T) {
+		// The file backend needs a passphrase source or it fails before
+		// returning a cfg; provide one via the per-service env var.
+		getenv := func(k string) string {
+			if k == "XDG_DATA_HOME" {
+				return t.TempDir()
+			}
+			if k == "ATLASSIAN_CLI_KEYRING_PASSPHRASE" {
+				return "test-passphrase"
+			}
+			return ""
+		}
+		cfg, err := buildKeyringConfig(BackendFile, "atlassian-cli", &Options{}, getenv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig file: %v", err)
+		}
+		if cfg.PassPrefix != "" {
+			t.Errorf("PassPrefix = %q, want empty for file backend", cfg.PassPrefix)
+		}
+		if cfg.FileDir == "" {
+			t.Errorf("FileDir is empty; expected file backend to set it")
+		}
+	})
+}
+
+// TestOpenOSBackend_PassOnWindows_FailsGracefully pins the Windows
+// behavior end-to-end: a user trying `--backend pass` on Windows must
+// get a sensible error (named, no panic) rather than the generic
+// ByteNess "backend not available" message. The error actually
+// originates in preflightOSBackend's runtime.GOOS == "windows" guard,
+// not from ByteNess's !windows opener registration — the preflight
+// fires first so the platform constraint is the user-visible reason.
+// Skipped on non-Windows.
+func TestOpenOSBackend_PassOnWindows_FailsGracefully(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only")
+	}
+	_, err := openOSBackend(BackendPass, "credstore-passtest", &Options{}, os.Getenv)
+	if err == nil {
+		t.Fatal("openOSBackend(pass) on windows: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "pass") {
+		t.Errorf("error should name the backend; got %q", err.Error())
+	}
+}
+
+// TestPreflightOSBackend_PassNotOnPath pins the actionable error
+// contract for the pass(1) preflight check. We deterministically force
+// LookPath to fail by emptying $PATH for the duration of the test
+// (t.Setenv restores it). The message must name the install hint
+// (apt/brew) and the `pass init` follow-up step so users hit the
+// preflight know exactly what to do — without this assertion a future
+// edit could silently drop the actionable text and tests would still
+// pass.
+func TestPreflightOSBackend_PassNotOnPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-empty preflight test is POSIX-only; the Windows branch returns the not-supported error before LookPath — see TestOpenOSBackend_PassOnWindows_FailsGracefully")
+	}
+	t.Setenv("PATH", "")
+
+	err := preflightOSBackend(BackendPass)
+	if err == nil {
+		t.Fatal("preflightOSBackend(BackendPass) with empty PATH: want error, got nil")
+	}
+	msg := err.Error()
+	for _, want := range []string{"pass", "PATH", "install", "pass init"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("preflight error missing %q hint; got %q", want, msg)
+		}
+	}
+}
+
+// TestPreflightOSBackend_NonPassBackendsSkipPreflight asserts that the
+// preflight is a no-op for every non-pass backend in the recognized
+// set, even with an empty PATH. Prevents a future change to
+// preflightOSBackend from accidentally gating an OS keyring on a CLI
+// binary it doesn't need.
+func TestPreflightOSBackend_NonPassBackendsSkipPreflight(t *testing.T) {
+	t.Setenv("PATH", "")
+	for _, kind := range []Backend{
+		BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory,
+	} {
+		if err := preflightOSBackend(kind); err != nil {
+			t.Errorf("preflightOSBackend(%q) = %v, want nil — non-pass backends must not preflight", kind, err)
+		}
 	}
 }

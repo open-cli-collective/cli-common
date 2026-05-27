@@ -36,6 +36,7 @@ const (
 	BackendWinCred       Backend = "wincred"        // Windows — later unit
 	BackendSecretService Backend = "secret-service" // Linux — later unit
 	BackendFile          Backend = "file"           // encrypted file — later unit
+	BackendPass          Backend = "pass"           // pass(1) CLI shell-out; !windows; requires `pass` binary + initialized password-store
 	BackendMemory        Backend = "memory"         // tests/CI, no disk
 )
 
