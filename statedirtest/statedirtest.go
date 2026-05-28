@@ -1,10 +1,14 @@
 // Package statedirtest provides the single hermetic environment helper for
 // state-component tests (working-with-state.md §3.1). It points the full
-// 8-var env set at a per-test temp dir so resolution for all four pillars
-// (config, cache, data — secrets are keyring-backed, location-independent)
-// never reaches the developer's real directories on any OS. (The set was
-// 7-var at INT-310 delivery and grew to 8 on 2026-05-28 when the Data
-// pillar's Path A backing added XDG_STATE_HOME.)
+// 8-var env set at a per-test temp dir so resolution for config and cache
+// (the pillars with implemented resolvers today) never reaches the
+// developer's real directories on any OS. Env coverage for the data
+// pillar is ready ahead of the resolver API — XDG_STATE_HOME and
+// %LOCALAPPDATA% are already pinned so that Data() (when it lands —
+// working-with-state.md §7 rollout step 7) will be hermetic from day
+// one. Secrets are keyring-backed and location-independent. (The set
+// was 7-var at INT-310 delivery and grew to 8 on 2026-05-28 when the
+// Data pillar's Path A backing added XDG_STATE_HOME.)
 //
 // HOME-only isolation is a Windows real-dir leak: os.UserConfigDir reads
 // %AppData% and os.UserCacheDir reads %LocalAppData%, neither of which is

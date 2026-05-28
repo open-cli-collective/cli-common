@@ -1,13 +1,12 @@
-# working-with-state.md — four pillars; Codex-converged on three (5 rounds), Round 6 + cleanup applied on the fourth
+# working-with-state.md — four pillars; Codex-converged on all four
 
-> Status: **§8 decisions through 2026-05-19 resolved; Codex architecture
-> pressure-test CONVERGED at round 5 (`blockers=0 majors=0 minors=0
-> nits=0`) — full disposition in §8. Fourth pillar (Data, §5) added
-> 2026-05-28; Round 6 Codex pressure-test ran (1B/3M/2m), all findings
-> applied; Round 6 cleanup pass (5 post-application items) also applied
-> — see §8 "Data pillar additions" and the Round 6 disposition tables.
-> Round 7 confirmation pass still recommended before tagging convergence
-> on §5.** Companion pillar to `working-with-secrets.md` (which also
+> Status: **All eight decisions log sections resolved; Codex architecture
+> pressure-test CONVERGED on the original three pillars at round 5
+> (`blockers=0 majors=0 minors=0 nits=0`, 2026-05-19) and on the Data
+> pillar (§5) at round 7 (`blockers=0 majors=0 minors=0` after applying
+> 2 minors, 2026-05-28). Full per-round disposition in §8 — rounds 1–5
+> covered the original three pillars; rounds 6, 6-cleanup, and 7 covered
+> Data.** Companion pillar to `working-with-secrets.md` (which also
 > moves into `cli-common/docs/` so both pillars co-version). This doc is
 > the source of truth for **non-secret on-disk state** across the Open
 > CLI Collective Go CLI family. Homed here (`cli-common/docs/`),
@@ -378,9 +377,13 @@ logs, working state — is XDG STATE's spec, not XDG DATA's. No fifth pillar.
 Go's stdlib provides no `UserDataDir` helper — derive it via the shared
 `cli-common` resolver (§6a):
 
-- **Linux:** `$XDG_STATE_HOME` if set (absolute, per the §1.1 tightening),
-  else `~/.local/state/<dir>`. *Not* `XDG_DATA_HOME` — see §5.1 for the
-  rationale (working state matches STATE's spec, not DATA's).
+- **Linux:** `$XDG_STATE_HOME/<dir>` if set; else `~/.local/state/<dir>`.
+  **A relative `$XDG_STATE_HOME` is non-conformant per the XDG spec and
+  returns an error** — same intentional tightening as `XDG_CONFIG_HOME` /
+  `XDG_CACHE_HOME` (§1.1). No silent fallback on relative values: the
+  resolver mirrors the stdlib helpers' behavior so a misconfigured dev env
+  surfaces loudly. *Not* `XDG_DATA_HOME` — see §5.1 for the rationale
+  (working state matches STATE's spec, not DATA's).
 - **macOS:** `~/Library/Application Support/<dir>/data/`. Application
   Support is the catch-all root for both config and data on macOS; the
   `data/` subdir disambiguates pillars within the tool's subtree. (macOS
@@ -413,8 +416,10 @@ joins the existing set (`HOME`, `USERPROFILE`, `AppData`, `LocalAppData`,
 stays in the set so an XDG-aware dev env that exports either variant
 can't bleed into a Linux test run. macOS/Windows roots chain through
 `HOME`/`USERPROFILE`/`AppData`/`LocalAppData` — already overridden, no
-change needed there. The helper's doc-string is updated to read "all
-four pillars" rather than "config + cache."
+change needed there. **Env coverage is ready ahead of the resolver API:**
+the helper pins the vars `Data()` will read (§7 rollout step 7), so once
+the resolver lands its data path it's hermetic from day one — the helper
+itself is not gated on the resolver method existing.
 
 ### 5.4 Format invariants
 
@@ -1071,3 +1076,16 @@ Round 6 apply. All accepted:
 | 8-var propagation incomplete — §7 step 1 / §7.6 step 6 / §8 decision rows / `statedirtest.go:3` still said 7-var | All forward-looking text now reads "8-var" or "full env set"; the two §8 decision rows from 2026-05-19 preserve "7-var" as the historical decision with an explicit "(grew to 8 on 2026-05-28)" annotation; package doc updated |
 | `statedir/resolver.go` package doc overclaims data-dir support — no `Data()` API exists yet | Doc rewritten as future-tense: explicit "NOT YET IMPLEMENTED" status, points at §7 rollout step 7 as the implementation gate (when the first data-holding CLI lands). Also `LegacySource` doc-string §5a → §6a |
 | `data-pillar-primer.md` stale enough to mislead — references old XDG_DATA_HOME / %APPDATA% / --purge-data / 7-var helper | Superseded banner at top with bulleted deltas; primer body preserved as "how the decision was reached" companion (user direction to keep it in place) |
+
+Round 7 (re-reviewed, 2026-05-28): **`blockers=0 majors=0 minors=2` — CONVERGED after applying the two minors.**
+Codex re-read the working tree after the cleanup pass landed and found no
+remaining architecture issues. Two minors applied:
+
+| Finding | Disposition |
+|---------|-------------|
+| **m1** §5.2 Linux line `$XDG_STATE_HOME` if set (absolute) — parenthetical hint, not explicit policy | §5.2 rewritten: relative `$XDG_STATE_HOME` returns an error, matching the §1.1 tightening for config/cache. Explicit policy, no silent fallback. |
+| **m2** `statedirtest` package doc overclaims "resolution for all four pillars" while `Data()` is unimplemented | Doc reframed: env coverage is ready ahead of the resolver API; the helper pins the vars `Data()` will read, so the helper itself is not gated on the resolver method existing. §5.3 reworded the same way. |
+
+**§5 is now Codex-converged.** The fourth pillar has the same convergence
+status as the original three (the existing pillars were `0/0/0/0` at
+Round 5; the data pillar is `0/0/0` at Round 7 post-minors).
