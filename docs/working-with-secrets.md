@@ -231,13 +231,14 @@ Two scopes — narrow (default) and total (`--all`). Both are scoped to the **ac
 - Leaves caches in place.
 - This is the everyday "I rotated my token, let me re-auth" command. Reversible by re-running `init`.
 
-### §1.7.2 `config clear --all` (factory reset of the active profile)
+### §1.7.2 `config clear --all` (config + credentials + cache reset for the active profile)
 
 - Everything in §1.7.1, **plus**:
 - The active config file (`~/.config/<service>/config.yml` and any per-tool legacy files the CLI still recognizes for *this* profile).
 - Cache directories the CLI owns.
 - Empty parent directories left behind after removal.
-- **Scope is the active profile, not the whole CLI.** For a single-profile user this is indistinguishable from "the machine never having seen the CLI" — which is the common case. For a multi-profile user, other profiles' configs and keyring entries remain untouched. This is the deliberate, safe default: a user with two Jira tenants who runs `config clear --all` on the active one does not lose access to the other.
+- **Scope is the active profile's *config + credentials + cache* — not "factory reset."** For a single-profile user this resets everything that `init` would re-create, *except the data pillar* (next bullet). For a multi-profile user, other profiles' configs and keyring entries remain untouched. This is the deliberate, safe default: a user with two Jira tenants who runs `config clear --all` on the active one does not lose access to the other.
+- **The data pillar (`working-with-state.md` §5) is explicitly excluded — `config clear --all` is NOT a full reset.** It does not touch program-managed data: run ledgers, persisted artifacts, local indexes, agent outputs. Data has its own nuclear verb (suggested: `<tool> data purge`); the pillars have separate lifecycles by design. A user who wants the historical "machine never having seen the CLI" state composes `config clear --all` AND `<tool> data purge` at the shell — there is no single-command full reset. This is the strict-separation rule decided in `working-with-state.md` §5.5 and §8.
 - **Whole-service purging is intentionally not provided** by this command. If we ever need it (an org-wide uninstall, a security incident response tool), it gets its own explicit command with its own flag, not silent expansion of `--all`'s scope.
 - Implies the no-prompt behavior described in the deployment manifest §1.5 (scriptable, no confirmation, idempotent).
 
@@ -325,7 +326,7 @@ A CLI is compliant with this standard when all of the following are true at runt
 2. **Normal API commands resolve access secrets from the keyring, not from environment variables or config files.** Env vars and flags carry new secret material into the CLI only via `init` / `set-credential` (§1.5). A normal API command may write a *refreshed* token back to the active ref (§1.5 intro) — that is not ingress of new material from the user/environment, it's persistence of material the upstream service just issued. The one runtime-env-var exception for secret/unlocking material is the file-backend passphrase (§1.4), which is not itself a service token.
 3. **`config show` (and `--json`) reports presence, backend, and ref for every secret — never values.** A user can confirm setup without seeing any secret material.
 4. **`config clear` (default scope) removes only the keys under the active `credential_ref`.** Other profiles, other CLIs' keyring entries, and the config file are untouched.
-5. **`config clear --all` returns the active profile to a pre-install state** — config file, keyring entries under the active ref, caches, and empty parent directories. Inactive profiles are not touched (§1.7.2).
+5. **`config clear --all` returns the active profile's config + credentials + cache to a pre-install state** — config file, keyring entries under the active ref, caches, and empty parent directories. Inactive profiles are not touched; the data pillar (`working-with-state.md` §5) is not touched (§1.7.2).
 6. **Legacy plaintext config migrates once on first read, then the plaintext field is removed from disk.** The migration prints one line to stderr and emits `_migration` in JSON output paths (§1.8). Re-running the CLI after migration finds no plaintext fields to migrate. Conflicts between plaintext and existing keyring values fail loudly per §1.8, never resolve silently. The migration test invokes the real CLI entrypoint on the migrating invocation and asserts the required migration signal is emitted on the relevant output path: stderr for human output and `_migration` for JSON output. At least one test covers migration followed by a non-zero command exit; the migration signal must still be emitted before process exit.
 7. **The standard's contracts hold identically on macOS, Windows, and Linux.** Where the Linux file backend is in use, `config show` says so. A locked Linux Secret Service fails closed (§1.4); the CLI never silently downgrades a working desktop install to the file backend.
 8. **No secret material appears in any output the CLI emits** — see §1.12.

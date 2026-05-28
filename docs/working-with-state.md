@@ -1,41 +1,59 @@
-# working-with-state.md — decisions locked; Codex-converged (5 rounds)
+# working-with-state.md — four pillars; Codex-converged on three (5 rounds), Round 6 + cleanup applied on the fourth
 
-> Status: **§7 decisions resolved 2026-05-19; Codex architecture
+> Status: **§8 decisions through 2026-05-19 resolved; Codex architecture
 > pressure-test CONVERGED at round 5 (`blockers=0 majors=0 minors=0
-> nits=0`) — full disposition in §7.** Companion pillar to
-> `working-with-secrets.md` (which also moves into `cli-common/docs/` so both
-> pillars co-version). This doc is the source of truth for **non-secret
-> on-disk state** across the Open CLI Collective Go CLI family. Homed here
-> (`cli-common/docs/`), versioned with the `cli-common` state components
-> (path/dir resolver + cache), pinned per-CLI like the credstore API
-> (tag-before-close, INT-310).
+> nits=0`) — full disposition in §8. Fourth pillar (Data, §5) added
+> 2026-05-28; Round 6 Codex pressure-test ran (1B/3M/2m), all findings
+> applied; Round 6 cleanup pass (5 post-application items) also applied
+> — see §8 "Data pillar additions" and the Round 6 disposition tables.
+> Round 7 confirmation pass still recommended before tagging convergence
+> on §5.** Companion pillar to `working-with-secrets.md` (which also
+> moves into `cli-common/docs/` so both pillars co-version). This doc is
+> the source of truth for **non-secret on-disk state** across the Open
+> CLI Collective Go CLI family. Homed here (`cli-common/docs/`),
+> versioned with the `cli-common` state components (path/dir resolver +
+> cache), pinned per-CLI like the credstore API (tag-before-close,
+> INT-310).
 
 ---
 
-## 1. Scope & the three pillars
+## 1. Scope & the four pillars
 
-A CLI puts exactly three kinds of state on disk/keyring. Each has one owner:
+A CLI puts exactly four kinds of state on disk/keyring. Each has one owner:
 
 | Pillar | Kind of state | Where | Owning doc |
 |--------|---------------|-------|------------|
 | **Secrets** | access credentials | OS keyring (`cli-common/credstore`) | `working-with-secrets.md` |
 | **Config** | durable, authored, non-secret | `os.UserConfigDir()/<tool>` | **this doc §3** |
 | **Cache** | disposable, derived, regenerable | `os.UserCacheDir()/<tool>` | **this doc §4** |
+| **Data** | program-managed working state | `XDG_STATE_HOME` (Linux) / `%LOCALAPPDATA%` (Windows) / Application Support + `data/` subdir (macOS) | **this doc §5** |
 
 Secrets are out of scope here — see `working-with-secrets.md`. The defining
-distinction this doc rests on: **config is authored and must survive; cache is
-derived and must be safe to delete at any instant.** A value that the user set
-is config. A value fetched from an API to avoid re-fetching is cache. They
-never share a directory.
+distinctions this doc rests on:
+
+- **Config is user-facing** — authored, edited, sometimes templated by an org;
+  the user puts it there, and `config clear --all` resets it.
+- **Cache is derived and safe to delete at any instant** — a value fetched to
+  avoid re-fetching belongs here; loss is tolerated by definition.
+- **Data is program-facing** — bytes the program writes and reads while it
+  runs; the user shouldn't poke at it directly. Not config (user didn't author
+  it), not cache (loss is not tolerated). Run ledgers, persisted artifacts,
+  local indexes — see §5.
+
+They never share a directory. **Tiebreaker for the fuzzy cache/data line:
+default to cache.** Loss-tolerated is the safer error than disk-cruft
+accretion.
 
 The one-line standard:
 
-> Config → `os.UserConfigDir()/<tool>` · Cache → `os.UserCacheDir()/<tool>` · Secrets → OS keyring
+> Config → `os.UserConfigDir()/<tool>` · Cache → `os.UserCacheDir()/<tool>` · Data → `XDG_STATE_HOME/<tool>` (Linux) / `%LOCALAPPDATA%\<tool>` (Windows) / `~/Library/Application Support/<tool>/data/` (macOS) · Secrets → OS keyring
 >
-> **Use the Go stdlib helper. No hand-rolled *current/target* path
-> resolution** (a CLI's bespoke *legacy-source* probing is exempt — §3/§5a).
-> The helpers honor `$XDG_*` on Linux and return the OS-native dir on
-> macOS/Windows — that *is* the standard. Decided 2026-05-19 (§7).
+> **Use the Go stdlib helper where one exists. No hand-rolled
+> *current/target* path resolution** (a CLI's bespoke *legacy-source*
+> probing is exempt — §3/§6a). The helpers honor `$XDG_*` on Linux and
+> return the OS-native dir on macOS/Windows — that *is* the standard. Data
+> has no Go helper; the `cli-common` resolver derives it (§5.2). Decided
+> 2026-05-19 (§8); data added 2026-05-28.
 
 ### 1.1 Platform mapping (Go stdlib)
 
@@ -54,7 +72,7 @@ Go ships only three of these helpers — there is **no** `UserDataDir` /
 
 **The standard is: call the Go helper, take whatever it returns.** Native per
 OS, no hand-rolled *current/target* resolution (bespoke *legacy-source*
-probing stays exempt — §3/§5a). On Linux the helpers honor `$XDG_*` (so power
+probing stays exempt — §3/§6a). On Linux the helpers honor `$XDG_*` (so power
 users' overrides still work); on macOS/Windows they return the OS-native dir.
 
 This *changes current behavior for config* — but the starting point is **not
@@ -86,14 +104,32 @@ root already calls `os.UserCacheDir()` (conformant location, though its writes
 are non-atomic and its TTL is still user-configurable — §4); `slck`/`nrq`/
 `sfdc`/`cfl` have **no disk cache**; `jtk` is the **only existing disk-cache
 outlier** (`~/.jtk/cache`). Remaining work is broader than just relocation —
-per §2/§6 it is, across the units: (1) one-time silent B2a/B2b-style config
+per §2/§7 it is, across the units: (1) one-time silent B2a/B2b-style config
 relocation on macOS/Windows for the hand-rolling stores; (2) the same
 adoption in `atlassian-cli/shared/credstore` (**not** `cli-common/credstore`
-— see §6.5), as one combined cfl+jtk unit; (3) config writes → atomic + dirs
+— see §7.5), as one combined cfl+jtk unit; (3) config writes → atomic + dirs
 `0700`/files `0600` wherever not already (slck/sfdc/gro + legacy cfl pkg);
 (4) the jtk cache re-migration; and (5) gro cache → atomic writes, hard-coded
-TTL, and removal of `gro config cache ttl|show|clear`. Rollout in §6;
-decisions in §7.
+TTL, and removal of `gro config cache ttl|show|clear`. Rollout in §7;
+decisions in §8.
+
+**Data resolution (the fourth pillar)** is not provided by a Go stdlib
+helper — the `cli-common` resolver derives it per platform (§5.2):
+
+- **Linux:** `$XDG_STATE_HOME` if set (absolute), else `~/.local/state/<dir>`.
+  Not `XDG_DATA_HOME`: the use case is working/running state, which matches
+  XDG STATE's spec (high-churn, not backup-targeted), not XDG DATA's
+  (portable user data).
+- **macOS:** `~/Library/Application Support/<dir>/data/` — Apple's
+  Application Support is the catch-all root for both config and data; the
+  `data/` subdir disambiguates pillars within the tool's subtree.
+- **Windows:** `%LOCALAPPDATA%\<dir>` — explicitly **not** `%APPDATA%`
+  (Roaming). Roaming would sync the data dir (SQLite, logs, agent outputs)
+  over the network for users on roaming profiles; LocalAppData is the
+  machine-local, non-roaming home that fits the working-state use case.
+
+No existing CLI holds data today — the pillar is greenfield, additive to
+the rollout (§7).
 
 ---
 
@@ -114,6 +150,10 @@ No CLI is fully conformant. Per-surface, with the concrete gap:
 "check" = verify against the §3 `0700`/`0600` rule during the port; do not
 assume conformant.
 
+**Data:** no existing CLI holds program-managed data per §5; the table
+omits a data column for brevity. Add one when the first port (e.g. `cr`)
+introduces a data dir.
+
 > **Corrections vs. the earlier draft (Codex-verified):** (1) gro is **not**
 > "no action — B2b was correct": only its cache *location* is conformant; its
 > config still hand-rolls, its cache writes are non-atomic, its TTL is still
@@ -125,7 +165,7 @@ assume conformant.
 > and jtk each have **two config surfaces**: the *shared* atlassian-cli
 > config.yml (written atomically by the shared credstore) and a *legacy
 > per-tool config package*; the shared surface is one combined cfl+jtk
-> resolver unit (§6.4), the legacy packages are per-tool. jtk's legacy pkg
+> resolver unit (§7.4), the legacy packages are per-tool. jtk's legacy pkg
 > already uses `os.UserConfigDir()`. **Secrets** (keyring) are
 > location-independent and out of scope.
 
@@ -134,7 +174,7 @@ assume conformant.
 ## 3. Config (durable state)
 
 - **Resolution:** `os.UserConfigDir()/<dir>`, obtained from the shared
-  `cli-common` state resolver (§5a). The resolver owns the *base-dir + naming
+  `cli-common` state resolver (§6a). The resolver owns the *base-dir + naming
   policy + create/no-create split*; it is **not** a blanket "no file may ever
   call `os.User*Dir()`" ban — a CLI's bespoke legacy-source detection (e.g.
   probing an old `~/.config` path that the helper would never return)
@@ -144,14 +184,14 @@ assume conformant.
   `atlassian-cli/shared/credstore/credstore.go:72` config.yml path are the
   **anti-pattern to replace** for the *current* path; legacy detection is a
   separate, intentionally per-CLI concern.
-- **`<dir>` naming rule (DECIDED §7):** keyed to **credential scope, not the
+- **`<dir>` naming rule (DECIDED §8):** keyed to **credential scope, not the
   binary**. A repo whose binaries share one credential bundle shares one
   config dir: atlassian-cli ⇒ `os.UserConfigDir()/atlassian-cli` (one dir, one
   `config.yml`, one keyring bundle — matches the B3 design). Single-binary
   repos ⇒ the tool name. (Cache differs — per-binary, see §4.1.)
 - **macOS/Windows migration:** adopting the helper relocates the config dir on
   those OSes. One-time, silent, non-fatal, **bespoke per unit / credential
-  scope** (§6.4 — matched to that scope's *actual* current on-disk reality,
+  scope** (§7.4 — matched to that scope's *actual* current on-disk reality,
   which is **not** uniformly `~/.config`: jtk legacy is already
   `os.UserConfigDir()`, cfl legacy is `~/.config/cfl`, shared Atlassian is
   `~/.config/atlassian-cli`), invisible to the user; fail loud only on a
@@ -186,13 +226,16 @@ leak on Windows. The shared hermetic helper MUST point **all** of these at
 the test temp dir:
 
 `HOME`, `USERPROFILE`, `AppData`, `LocalAppData`, `XDG_CONFIG_HOME`,
-`XDG_CACHE_HOME`, and `XDG_DATA_HOME`
+`XDG_CACHE_HOME`, `XDG_DATA_HOME`, and `XDG_STATE_HOME`
 
 (XDG vars included so a developer's exported `$XDG_*` can't bleed into a
-Linux test run either). Existing per-CLI helpers are incomplete — e.g.
+Linux test run either). The set grew to 8 vars when the data pillar (§5)
+landed with Path A backing on `XDG_STATE_HOME`; both XDG_DATA_HOME and
+XDG_STATE_HOME are pinned so either variant in a dev's env can't leak.
+Existing per-CLI helpers are incomplete — e.g.
 `google-readonly/internal/credtest/credtest.go:29` sets `LOCALAPPDATA` but
 not `AppData`. This helper ships **once** in `cli-common` alongside the
-resolver (§5a); no CLI re-derives the env-var list.
+resolver (§6a); no CLI re-derives the env-var list.
 
 ### 3.2 Migration acceptance matrix (per-port merge gate)
 
@@ -218,7 +261,7 @@ CLI's* real legacy source(s):
 | **conflicting** old vs new | **fail loud**, name both paths, mutate nothing | test |
 | malformed old | fail loud, do not silently discard | test |
 | malformed new | fail loud, do not overwrite with old | test |
-| neither present | path **resolved, not created**; dir created only on first write/init (per the §5a no-create split) | test |
+| neither present | path **resolved, not created**; dir created only on first write/init (per the §6a no-create split) | test |
 | **no real-dir writes** | hermetic: test never touches the dev's real dirs | §3.1 helper |
 
 A port that cannot demonstrate all eight rows **and** declare the three
@@ -237,7 +280,7 @@ origin).
 `google-readonly/internal/config/config.go` `CacheDirPath()` (the B2b
 implementation — the conformant shape to lift into `cli-common`).
 
-**Multi-binary repos: cache is PER-BINARY (DECIDED §7).** Unlike config
+**Multi-binary repos: cache is PER-BINARY (DECIDED §8).** Unlike config
 (credential-scoped, one shared dir), cache is per-tool derived data — jtk
 caches Jira resources, cfl would cache Confluence resources; they never share.
 So atlassian-cli ⇒ `os.UserCacheDir()/jtk` and `os.UserCacheDir()/cfl`
@@ -283,7 +326,223 @@ plain `os.WriteFile`** — adopting this is a real robustness win, not cosmetic.
 
 ---
 
-## 5. The `cli-common` state components
+## 5. Data (program-managed state)
+
+The fourth pillar — bytes the program owns the lifecycle of. The lifecycle
+invariants are:
+
+- **The dir as a whole survives `config clear --all`.** Pillars have
+  separate lifecycles; a config-scoped reset never reaches into data.
+- **Whole-dir nuke is explicit and user-invoked** (the `purge` verb;
+  §5.5). Not triggered by uninstall, not folded into other resets.
+- **Individual records / artifacts inside the dir may be removed by the
+  program** under a documented retention policy (§5.6). Automatic
+  enforcement at write-time is preferred over user-driven prune.
+
+Config is *user*-facing (authored, edited, sometimes templated); data is
+*program*-facing — the program writes, reads, mutates; the user shouldn't
+poke at it directly.
+
+### 5.1 What belongs here
+
+Examples: a run ledger (SQLite of every invocation), persisted artifacts
+kept past a run (findings JSON, log streams, agent outputs), build
+histories, local indexes, downloaded large assets the user benefits from
+re-using across runs. Anything that:
+
+- the program reads and writes during normal operation, AND
+- the user did not author and would not edit by hand, AND
+- loss on `config clear --all` would surprise the user.
+
+Negative definition: **not config** (user didn't author it), **not secret**
+(no credential), **not cache** (not safe to delete).
+
+**Tiebreaker: when a maintainer is genuinely on the fence between cache and
+data, default to cache.** Loss-tolerated is the safer error than
+accreted-on-disk-forever. Drift toward data is the cost we accept for
+having a fourth pillar; the tiebreaker minimizes it.
+
+**XDG DATA + STATE one-pillar collapse — but backed by STATE.** XDG
+splits `XDG_DATA_HOME` (portable user data, backup-targeted) from
+`XDG_STATE_HOME` (logs / runtime / recently-used / high-churn working
+state). macOS doesn't distinguish at all (Application Support is the
+catch-all); Windows distinguishes by roaming-vs-local (`%APPDATA%` vs
+`%LOCALAPPDATA%`) but not by data-vs-state. We honor the OS-level
+collapse where it exists and pick the spec-correct half where it doesn't:
+on Linux we back the data pillar with `XDG_STATE_HOME` (not
+`XDG_DATA_HOME`) because the use case — run ledgers, persisted artifacts,
+logs, working state — is XDG STATE's spec, not XDG DATA's. No fifth pillar.
+
+### 5.2 Location
+
+Go's stdlib provides no `UserDataDir` helper — derive it via the shared
+`cli-common` resolver (§6a):
+
+- **Linux:** `$XDG_STATE_HOME` if set (absolute, per the §1.1 tightening),
+  else `~/.local/state/<dir>`. *Not* `XDG_DATA_HOME` — see §5.1 for the
+  rationale (working state matches STATE's spec, not DATA's).
+- **macOS:** `~/Library/Application Support/<dir>/data/`. Application
+  Support is the catch-all root for both config and data on macOS; the
+  `data/` subdir disambiguates pillars within the tool's subtree. (macOS
+  has no STATE analog; Application Support is the pragmatic home.)
+- **Windows:** `%LOCALAPPDATA%\<dir>`. Explicitly **not** `%APPDATA%`
+  (Roaming). Roaming would sync the data dir over the network for users
+  on roaming profiles — disastrous for SQLite, logs, agent outputs,
+  large artifacts. `%LOCALAPPDATA%` is the machine-local, non-roaming
+  home that fits the working-state use case. No `data\` subdir needed —
+  LocalAppData is a separate root from `%APPDATA%` (where config lives).
+
+**Naming rule: data is per-binary** — same as cache (§4.1), not config.
+Derived program-managed state has program-specific lifecycle; jtk's run
+ledger ≠ cfl's run ledger even if they share credentials. So a
+shared-credential family like atlassian-cli would have separate `…/jtk`
+and `…/cfl` data dirs, not a shared `…/atlassian-cli/{jtk,cfl}`. The
+config rule (credential-scoped) is the wrong analog because data isn't
+owned by the credential bundle.
+
+The resolver owns the create-vs-no-create split the same way it does for
+config and cache: resolution is mkdir-free; the dir is created lazily on
+first write.
+
+### 5.3 Test isolation
+
+The Path A backing shift (Linux → `XDG_STATE_HOME`) **grows the
+`statedirtest.Hermetic` helper from 7 to 8 env vars**: `XDG_STATE_HOME`
+joins the existing set (`HOME`, `USERPROFILE`, `AppData`, `LocalAppData`,
+`XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`). `XDG_DATA_HOME`
+stays in the set so an XDG-aware dev env that exports either variant
+can't bleed into a Linux test run. macOS/Windows roots chain through
+`HOME`/`USERPROFILE`/`AppData`/`LocalAppData` — already overridden, no
+change needed there. The helper's doc-string is updated to read "all
+four pillars" rather than "config + cache."
+
+### 5.4 Format invariants
+
+- **Permissions:** dir `0700`, file `0600` — same as config and cache.
+- **Atomic write: NOT mandated.** Data is open-ended in shape — SQLite
+  (with its own WAL/journal durability), append-only logs, streamed
+  artifacts, many small files — and a blanket temp-rename rule fits none
+  of them well. Reach for atomic writes when the format is a single
+  self-contained artifact that must transition atomically; do not force
+  it on the database engine or on stream writers.
+- **Schema migration: fail loud + migrate, never silent self-heal.**
+  Cache's "version mismatch = miss" trick (§4.2) works because cache loss
+  is tolerated; data loss is not. A self-updating application is on the
+  hook to migrate its on-disk data forward at startup — this is
+  industry-norm for any program that owns durable state, but it bears
+  saying once here so the contrast with cache is explicit. Store the
+  schema version, detect mismatch, migrate or refuse.
+
+### 5.5 Command surface
+
+The user MUST have a discoverable path to remove data. Without one, the
+pillar accretes orphaned MB on the user's disk three years after uninstall.
+Two operations the CLI exposes:
+
+**Nuclear (required):** wipe the data dir entirely; drop any database
+artifacts. Idempotent. **Must not depend on the data being readable** — if
+the SQLite is corrupt or schema-incompatible, nuclear must still scrub.
+This is the §7.6 cleanup-command recovery contract (MON-5372 / MON-5373)
+applied to data: the cleanup verb is the user's escape hatch *from* the
+broken state it exists to wipe; it cannot itself require `Load`-grade
+health.
+
+**Maintenance (optional, per-CLI shape):** selective trim — `--older-than`,
+`--keep-last N`, project-scoped pruning, etc. The doc does not standardize
+the shape; each CLI knows what its own state looks like and how a user
+would want to trim it.
+
+**Suggested verbs (not mandated):**
+
+- **Nuclear: `<tool> data purge`.** Alternatives: `destroy` (Terraform-
+  native), `wipe`, `drop` (SQL-native if storage is a database). Avoid
+  `reset` — implies recoverable, wrong signal for nuclear.
+- **Maintenance: `<tool> data prune`.** Alternatives: `trim`, `compact`,
+  `vacuum` (SQLite-native), `gc` (programmer-y). Avoid `clean` —
+  ambiguous between trim and nuke.
+
+`purge` + `prune` is the recommended pair: Unix-ecosystem-native (`apt
+purge`, `git prune`, `docker prune`), severity encoded in the verb itself,
+easy to remember together.
+
+**Severity belongs in the verb, not a flag.** `config clear --all` is the
+precedent the family inherits for the config pillar, but new data subtrees
+should not repeat the pattern. `purge` vs. `prune` reads more clearly than
+`clear --all` vs. `clear` and resists accidental nuclear invocation.
+
+**Sub-conventions:**
+
+- Nuclear prompts for confirmation by default; `--yes` (or `--force`) opts
+  out. Matches `terraform destroy`, `kubectl delete` precedent.
+- **Both nuclear and maintenance verbs support `--dry-run`.** Nuclear's
+  dry-run reports the exact paths that would be scrubbed (data dir,
+  database artifacts) without removing anything; maintenance's dry-run
+  reports the selection that would be acted on. Nuclear is the
+  highest-risk verb in this pillar — preview is not optional.
+
+**Scope separation from `config clear --all`:** config verbs are
+config-scope only. `config clear --all` MUST NOT reach into data — no
+`--purge-data` flag, no opt-in cross-pillar coupling. The pillars have
+separate verbs because they have separate lifecycles; users can compose
+them at the shell if they want a full reset.
+
+**Nuclear is user-invoked, not uninstall-triggered.** A package-manager
+uninstall does not call nuclear; the user must invoke it explicitly.
+Otherwise we recreate the cache failure mode in reverse — losing things by
+accident.
+
+### 5.6 Retention (guidance)
+
+The data pillar can grow unboundedly if a CLI persists one row per run, one
+file per artifact, or log streams kept past the run. Codex flagged this
+during the data-pillar pressure-test: without retention, agent outputs
+and log streams become a disk-and-privacy problem. The doc cannot enforce
+a single retention shape — what counts as "old" is per-CLI — but it can
+hand authors the menu and a tiebreaker.
+
+**Shapes of retention to consider** (compose freely; one of these is
+usually enough):
+
+- **Size cap.** "Keep the data dir under N MB; evict oldest on overflow."
+  Best for blob-style artifacts where total bytes is the user's pain.
+- **Age cap.** "Drop rows / files older than D days." Best for ledgers
+  where staleness is the right axis.
+- **Count cap.** "Keep the last N runs." Best for ledgers with a natural
+  unit of work (a run, a build, a review).
+
+**Enforcement timing** — automatic-at-write beats manual-prune; users do
+not manually prune. If the CLI ships a `prune` verb, the automatic enforcer
+is still doing 95% of the work and `prune` is the user's explicit override.
+
+**Defaults matter.** Generous-but-finite is better than generous-and-
+unbounded. A user who wants to keep more state can raise the cap; a user
+who never runs `prune` is silently protected.
+
+This is guidance, not a mandate — the CLI developer is on the hook to
+actually implement it. But "we didn't think about retention" is the same
+failure mode as "we didn't think about TTL" was for cache (§4.4), and the
+fix for cache was the same shape: pick a sensible default, hard-code it,
+escape hatch for explicit override. Don't ship a CLI whose data dir grows
+forever without thinking about how it stops.
+
+### 5.7 What lives here vs. what doesn't
+
+Lives here: run ledgers, persisted run artifacts (kept past the run), local
+indexes, build histories, downloaded large assets the user benefits from
+re-using across runs.
+
+Does NOT live here:
+
+- credentials / tokens → secrets (keyring)
+- user-edited connection fields, defaults, templates → config
+- per-resource freshness-bounded fetches → cache
+- anything safe to delete on next run → cache
+- transient runtime files that don't outlive the process → `os.MkdirTemp`
+  or `t.TempDir`-equivalent, not the data pillar
+
+---
+
+## 6. The `cli-common` state components
 
 `cli-common` gains the **state components** (exact package layout is an
 impl detail for the Codex pass; principle-level here):
@@ -295,10 +554,15 @@ genuinely common policy and easy to get subtly wrong per-CLI:
 
 - the **credential-scope naming rule** (§3) and **per-binary cache rule**
   (§4.1) — one place, not re-derived 6×;
+- the **data-dir derivation** (§5.2) — no Go stdlib helper exists, so the
+  resolver computes the platform-specific path (`XDG_STATE_HOME` on Linux;
+  `%LOCALAPPDATA%` on Windows; Application Support + `data/` subdir on
+  macOS); one place, not re-derived per-CLI;
 - the **create vs. no-create split** (a resolver that mkdirs is wrong for
   dry-run / `config clear --all` paths — gro already learned this in B2b);
-- the **§3.1 hermetic test helper** (the full 7-var env set — the highest
-  leak-risk item, must not be re-derived per CLI);
+- the **§3.1 hermetic test helper** (the full 8-var env set after the Data
+  pillar's Path A backing — the highest leak-risk item, must not be
+  re-derived per CLI; covers all four pillars — §5.3);
 - a documented **migration-source enumeration** seam so each CLI's bespoke
   legacy detection plugs in *without* the resolver itself trying to be
   generic about legacy layouts.
@@ -348,28 +612,30 @@ not designed, until cfl forces the question (rule of three).**
 
 ---
 
-## 6. Rollout — LOCKED (decided 2026-05-19)
+## 7. Rollout — LOCKED (decided 2026-05-19)
 
 **Model: commons-first, then iterative port one *unit* at a time with a
 bespoke invisible migration; the commons generalizes as constraints
-surface.** A **unit is a credential scope, not a binary** (§6.4): it may be
+surface.** A **unit is a credential scope, not a binary** (§7.4): it may be
 one single-binary CLI, one shared-credential scope spanning multiple
 binaries (the Atlassian shared config = cfl+jtk together), or one cache-only
 surface (the jtk cache re-migration, independent). Within a unit the
 resolver switch, config atomic/perms, and any cache adoption are the *same
 act* — done together (not two horizontal sweeps).
 
-1. **Build the `cli-common` state components first** (§5a resolver + §5a
-   7-var test helper + §5b tier-1 cache core). Nothing ports until this
+1. **Build the `cli-common` state components first** (§6a resolver + §6a
+   hermetic test helper + §6b tier-1 cache core). Nothing ports until this
    exists. **DELIVERED 2026-05-19 (MON-5364):** `cli-common/statedir`
    (`Scope`/`Cache` resolver, create-vs-no-create split, `LegacySource`
-   seam), `cli-common/statedirtest` (the 7-var `Hermetic` helper), and
+   seam), `cli-common/statedirtest` (the `Hermetic` helper — 7-var at
+   delivery; grew to 8 on 2026-05-28 when the Data pillar's Path A backing
+   added `XDG_STATE_HOME`), and
    `cli-common/cache` (directory-agnostic `Envelope[T]`,
    `ReadResource[T]`/`WriteResource[T]`, atomic write,
    version-mismatch-as-miss,
    `Classify`/`Age`/`Status`, injected `Locator`). No CLI ported yet; no
-   INT-310 tag cut (the §5 release-train guardrail is unaffected).
-2. **Port one unit at a time** (unit per §6.4 = a CLI / a credential scope /
+   INT-310 tag cut (the §6 release-train guardrail is unaffected).
+2. **Port one unit at a time** (unit per §7.4 = a CLI / a credential scope /
    a cache-only surface). A unit is *one PR* but **decomposed into separate,
    independently-reviewable commits, each with its own acceptance
    checklist** — because the surfaces are unrelated and "bundled" otherwise
@@ -382,7 +648,7 @@ act* — done together (not two horizontal sweeps).
    surface whose diff is too large to review beside the others **splits to
    its own PR**. Reviewability is not traded for the migration-safety win —
    both are required.
-3. **Generalize the commons as you go — under the §5 guardrail** (additive,
+3. **Generalize the commons as you go — under the §6 guardrail** (additive,
    or a coordinated release train with every ported consumer green against
    the candidate SHA; no tag without that matrix). Don't special-case a CLI
    to dodge a real API gap.
@@ -419,15 +685,23 @@ act* — done together (not two horizontal sweeps).
    change to `cli-common/credstore`. atlassian-cli's shared wrapper adopts it
    as part of the cfl/jtk port. The INT-310 tag-before-close must cover the
    new `cli-common` state package + this doc (credstore itself is unchanged
-   here); repin consumers per the §5 matrix rule.
+   here); repin consumers per the §6 matrix rule.
 6. Finalize this doc from what survived; make the tier-2 call.
-   **DONE 2026-05-20 (MON-5375):** see §6.6 below for the retrospective and §5b for the tier-2 call.
+   **DONE 2026-05-20 (MON-5375):** see §7.6 below for the retrospective and §6b for the tier-2 call.
+7. **Data pillar (§5) is additive / greenfield (2026-05-28).** No existing
+   CLI holds data state, so the data pillar contributes zero port-units to
+   the rollout above. Net-new CLIs (`cr` is the driver) adopt §5 from
+   inception alongside §3/§4/§6. The `cli-common` resolver gains a `Data()`
+   method when the first data-holding CLI lands; the §6 release-train
+   guardrail applies — the addition is additive (no existing caller
+   changes behavior), so no consumer-matrix repin is required at
+   extraction time.
 
-### 6.6 INT-310 close-out retrospective (MON-5375, 2026-05-20)
+### 7.6 INT-310 close-out retrospective (MON-5375, 2026-05-20)
 
 The state workstream shipped 5 of 6 planned port units against the
 candidate cli-common SHA `e67b2fc81f9d7072679d8cd77098121ed6f15f47` (no
-breaking changes required). With the matrix green per §5, **cli-common
+breaking changes required). With the matrix green per §6, **cli-common
 `v0.1.0` is the INT-310 state baseline tag** — first stable for
 `statedir` + `statedirtest` + `cache` (tier 1), alongside the
 already-shipped `credstore` and both standards docs.
@@ -446,7 +720,7 @@ dependency today, so it does not ride the v0.1.0 train; it will adopt
 the tag when un-parked. This is the explicit "resolve or exclude"
 disposition the GH issue called for.
 
-**Commons API additions during ports (both additive — Codex-cleared per §5):**
+**Commons API additions during ports (both additive — Codex-cleared per §6):**
 - `cache.WriteEnvelope` (cli-common#20, SHA `2c4a5b8`) — verbatim atomic writer; jtk-facade required it to relocate envelopes byte-for-byte from `~/.jtk/cache`.
 - Underscore allowed in `cache` component regex `^[A-Za-z0-9][A-Za-z0-9._\-]*$` (cli-common#21, SHA `e67b2fc`) — jtk's pre-port instance keys contain underscores.
 
@@ -505,8 +779,9 @@ inherits them):**
    (different bytes = different token = conflict). Pick the model
    that matches the file format, not a single family rule.
 
-6. **7-var `statedirtest.Hermetic`** mandatory: HOME/XDG-only test
-   isolation leaks the developer's real `~/Library/Application
+6. **Full-env-set `statedirtest.Hermetic`** mandatory (7-var at INT-310
+   delivery; 8-var after Path A added `XDG_STATE_HOME`): HOME/XDG-only
+   test isolation leaks the developer's real `~/Library/Application
    Support` / `%APPDATA%` paths on macOS/Windows. Caught a real-dir
    leak in MON-5370 (cfl+jtk shared test was reading the dev's actual
    bearer config). `t.Parallel`-unsafe — use sequentially.
@@ -553,33 +828,34 @@ not by rediscovering them per port.
 
 ---
 
-## 7. Decisions log (all resolved 2026-05-19)
+## 8. Decisions log
 
 - [x] **OS-philosophy split (§1.1): native everywhere.** The *current/target*
       config & cache path comes from the shared `cli-common` resolver over
       `os.UserConfigDir()`/`os.UserCacheDir()` — no hand-rolled *current-path*
       resolution. (A CLI's bespoke *legacy-source* probing is explicitly
-      exempt — §3/§5a.)
-- [x] **Path/dir resolution is a `cli-common` component (§5a)** for the
+      exempt — §3/§6a.)
+- [x] **Path/dir resolution is a `cli-common` component (§6a)** for the
       current/target path + naming policy + create/no-create split + the
-      7-var test helper — *not* a thin `os.User*Dir()` ban. Per-CLI legacy
-      probes still compute their own paths (Codex M3: a thin wrapper would be
-      coupling without payoff; the component earns its place via the policy
-      surface, not by banning stdlib calls).
+      hermetic test helper (7-var at this decision; grew to 8 on 2026-05-28
+      — see Data pillar additions below) — *not* a thin `os.User*Dir()` ban.
+      Per-CLI legacy probes still compute their own paths (Codex M3: a thin
+      wrapper would be coupling without payoff; the component earns its
+      place via the policy surface, not by banning stdlib calls).
 - [x] **Config dir name (§3): credential-scoped.** Shared-credential repos
       share one dir (atlassian-cli ⇒ `os.UserConfigDir()/atlassian-cli`);
       single-binary repos ⇒ tool name.
 - [x] **Multi-binary cache dir (§4.1): per-binary.** `…/jtk` & `…/cfl`
       separately; never a shared `…/atlassian-cli/{jtk,cfl}`.
-- [x] **Rollout (§6): commons-first, port one *unit* at a time** (unit =
-      a CLI / a credential scope / a cache-only surface, §6.4), commons
-      co-evolves under the §5 guardrail. **jtk-cache first** (independent);
+- [x] **Rollout (§7): commons-first, port one *unit* at a time** (unit =
+      a CLI / a credential scope / a cache-only surface, §7.4), commons
+      co-evolves under the §6 guardrail. **jtk-cache first** (independent);
       **Atlassian shared config = one combined cfl+jtk unit**. A unit is one
       PR **decomposed into per-surface commits with separate acceptance
       checklists** (split to multiple PRs if review surface demands) — not an
       opaque "bundle". No unit is "resolver only" — each also brings that
       scope's config writes to atomic + perms where not already.
-- [x] **Credstore correction (§6.5):** the resolver is adopted by
+- [x] **Credstore correction (§7.5):** the resolver is adopted by
       `atlassian-cli/shared/credstore`, **not** `cli-common/credstore` (the
       latter owns no config.yml path). New resolver = additive opt-in
       `cli-common` package; INT-310 tag covers it + this doc.
@@ -587,8 +863,10 @@ not by rediscovering them per port.
       7-var set (`HOME`, `USERPROFILE`, `AppData`, `LocalAppData`,
       `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`) — `HOME`-only is a
       Windows real-dir leak. Load-bearing; ships once in `cli-common`.
-- [x] **Tier-2 cache extraction (§5b): deferred** to post-cfl; promotion
-      criteria recorded in §5b. **Reaffirmed 2026-05-20 (MON-5375):**
+      *(Grew to 8 vars on 2026-05-28 when the Data pillar's Path A backing
+      added `XDG_STATE_HOME` — see Data pillar additions below.)*
+- [x] **Tier-2 cache extraction (§6b): deferred** to post-cfl; promotion
+      criteria recorded in §6b. **Reaffirmed 2026-05-20 (MON-5375):**
       tier-2 shape has only one consumer (jtk); promotion criteria
       explicitly unsatisfied. Re-evaluate when cfl gains a cache.
 - [x] **Doc home:** `cli-common/docs/`, versioned + pinned with the code.
@@ -603,6 +881,100 @@ not by rediscovering them per port.
       `cli-common/README.md`. (Verified: only one copy exists; clean move,
       no diverged-copy merge.)
 
+#### Data pillar additions (2026-05-28, Codex Round 6 applied)
+
+The following decisions land §5 Data as a fourth pillar. Round 6 Codex
+pressure-test ran 2026-05-28 (1 blocker / 3 majors / 2 minors); all
+findings applied. Round 7 confirmation pass recommended before tagging
+convergence on §5. Disposition table at the end of this section.
+
+- [x] **Fourth pillar — Data (§5): added.** Program-managed working state;
+      the program owns lifecycle, the user shouldn't poke at it directly.
+      Defined negatively ("not config, not secret, not cache") with the
+      cache/data tiebreaker "default to cache when on the fence." Resolves
+      the gap raised in `data-pillar-primer.md`. Driver: `cr` (codereview)
+      needs a SQLite run ledger + persisted artifacts that survive
+      `config clear --all`.
+- [x] **Data location (§5.2): Path A — STATE-flavored backing.**
+      `XDG_STATE_HOME` (Linux) / `%LOCALAPPDATA%` (Windows) /
+      `~/Library/Application Support/<dir>/data/` (macOS). Explicitly
+      **not** `XDG_DATA_HOME` on Linux (use case is working state, matches
+      STATE's spec) and explicitly **not** `%APPDATA%` on Windows (avoids
+      roaming-profile network-sync of SQLite + logs + agent outputs).
+      Resolved Codex Round 6 Blocker B1. No Go stdlib helper; `cli-common`
+      resolver derives.
+- [x] **Data naming rule (§5.2): per-binary.** Same as cache (§4.1), not
+      config. jtk's run ledger ≠ cfl's run ledger even if they share
+      credentials — derived program-managed state has program-specific
+      lifecycle, not credential-scope ownership. Resolved Codex Round 6
+      Major M1 (the earlier "deferred until first shared-credential
+      data-holding CLI" was contradictory with the inherited config rule).
+- [x] **XDG DATA + STATE collapse (§5.1): honored where the OS does it;
+      spec-correct half picked where it doesn't.** macOS/Windows collapse
+      at the OS level; on Linux we back with `XDG_STATE_HOME` (not
+      `XDG_DATA_HOME`) because the use case matches STATE's spec. No
+      fifth pillar.
+- [x] **Cache/data tiebreaker (§5.1): default to cache.** Loss-tolerated
+      is the safer error than disk-cruft accretion. This is the
+      drift-prevention mechanism in lieu of a strict positive
+      inclusion-criterion (the strict version was rejected as too
+      `cr`-shaped).
+- [x] **Data format invariants (§5.4): perms `0700`/`0600`; NO
+      atomic-write mandate; schema mismatch fail-loud + migrate.** The
+      schema clause is the property that distinguishes data from cache at
+      the implementation level — cache uses version-mismatch-as-miss
+      (§4.2), data cannot. Atomic writes are open-ended because the
+      formats are open-ended (SQLite has its own durability; logs/streams
+      don't want temp-rename).
+- [x] **Data command surface (§5.5): nuclear required, maintenance
+      per-CLI.** Nuclear obeys the §7.6 cleanup-command recovery contract
+      (must not require readable state). Suggested verb pair `purge`
+      (nuclear) / `prune` (maintenance); severity encoded in the verb,
+      not a flag. Confirmation prompt + `--yes` opt-out for nuclear.
+      **Both nuclear and maintenance verbs support `--dry-run`** —
+      nuclear's dry-run reports paths-that-would-be-scrubbed without
+      removing. Resolved Codex Round 6 Minor m1 (nuclear is the
+      highest-risk verb; preview is not optional).
+- [x] **Retention is guidance, not a mandate (§5.6).** If the data dir
+      can grow unboundedly in normal use (one row per run, one file per
+      artifact, log streams kept past the run), the CLI SHOULD declare a
+      retention/size policy and enforce it automatically. Shapes (size
+      cap / age cap / count cap) and exact flags are per-CLI; the doc
+      lists the menu and the tiebreakers. Generous-but-finite defaults
+      beat unbounded ones. Codex Round 6 Major M2 pushed for a MUST;
+      softened to SHOULD per user direction — the CLI developer is on
+      the hook to actually implement it.
+- [x] **Cross-doc update to `working-with-secrets.md` §1.7.2 (Round 6
+      Major M3).** Secrets doc now explicitly notes that the data pillar
+      is excluded from `config clear --all`'s scope — pillars have
+      separate lifecycles by design. Prevents the older "factory reset"
+      framing from leaking into implementers.
+- [x] **Config / data verb scope (§5.5): strict separation.** `config
+      clear --all` is config-scope only; no `--purge-data` flag, no
+      cross-pillar coupling. Pillars have separate lifecycles; users
+      compose at the shell for a full reset.
+- [x] **Nuclear is user-invoked, not uninstall-triggered (§5.5).**
+      Package-manager uninstall does not call nuclear; explicit user
+      invocation only. Avoids the cache failure mode in reverse (losing
+      things by accident).
+- [x] **`statedirtest.Hermetic` grows to 8 vars (§5.3).** Path A's Linux
+      backing shift (XDG_STATE_HOME) means the helper needed a new
+      override; XDG_DATA_HOME stays in the set so either XDG variant
+      that a dev env exports gets pinned. The macOS/Windows roots were
+      already covered by `AppData`/`LocalAppData`. Helper doc-string
+      updated to "all four pillars." Test renamed
+      `TestHermetic_IsolatesAll7Vars` → `IsolatesAll8Vars`.
+- [x] **Stale code comments updated (Round 6 Minor m2).**
+      `statedir/resolver.go` package doc now references §6a (was §5a) and
+      mentions data-dir derivation. `statedirtest/statedirtest.go`
+      package doc now references all four pillars and explicitly names
+      the data-pillar env vars it pins.
+- [x] **Doc home unchanged:** `cli-common/docs/`, versioned + pinned
+      with the code (the data pillar rides the existing infra).
+- [x] **`data-pillar-primer.md` retention:** kept for now as the
+      "how this decision was reached" companion. Revisit deletion when
+      `cr` lands its first data dir and §5 is stable.
+
 ### Codex pressure-test — disposition (session 019e3fe7, gpt-5.5 xhigh)
 
 Round 1: `blockers=2 majors=6 minors=2 nits=1`. All accepted (Codex
@@ -610,13 +982,13 @@ fact-checked against the sibling repos and caught real errors in the draft):
 
 | Finding | Disposition |
 |---------|-------------|
-| **B1** `cli-common/credstore` owns no config.yml resolver | §1.1/§3/§6.5 corrected → `atlassian-cli/shared/credstore`; resolver is additive opt-in |
+| **B1** `cli-common/credstore` owns no config.yml resolver | §1.1/§3/§7.5 corrected → `atlassian-cli/shared/credstore`; resolver is additive opt-in |
 | **B2** config move strands data; no acceptance checks | added §3.2 8-case matrix as a per-port merge gate |
-| **M1** Windows test isolation under-specified | §3.1/§7 now enumerate the full 7-var set |
-| **M2** "not frozen" lacks guardrail | §5 additive-or-all-consumers-green rule; no tag w/o consumer matrix |
-| **M3** §5a unjustified as thin wrapper | §5a reframed around naming/create-split/test-helper/migration seam |
-| **M4** bundling hides scope (gro) | §6.2 per-surface commits + checklists; split-PR escape hatch |
-| **M5** rollout under-scopes config standard | §2/§6.4 cache-less CLIs also get atomic + `0700`/`0600` |
+| **M1** Windows test isolation under-specified | §3.1/§8 now enumerate the full 7-var set |
+| **M2** "not frozen" lacks guardrail | §6 additive-or-all-consumers-green rule; no tag w/o consumer matrix |
+| **M3** §6a unjustified as thin wrapper | §6a reframed around naming/create-split/test-helper/migration seam |
+| **M4** bundling hides scope (gro) | §7.2 per-surface commits + checklists; split-PR escape hatch |
+| **M5** rollout under-scopes config standard | §2/§7.4 cache-less CLIs also get atomic + `0700`/`0600` |
 | **M6** §2 gro "none" false | §2 table rebuilt per-surface; gro action corrected |
 | **m1** "every CLI hand-rolls" not traceable | §1.1 narrowed; jtk legacy `os.UserConfigDir()` called out |
 | **m2** "cache already conformant" too broad | §1.1 precise: gro loc only / 4 none / jtk outlier |
@@ -628,38 +1000,74 @@ fallout from those corrections — all accepted:
 
 | Finding | Disposition |
 |---------|-------------|
-| **B** shared Atlassian config used by cfl *and* jtk → jtk-only port silently ports cfl w/o its §3.2 matrix | §6.4 reworked: a "unit" is a credential scope; shared-config is one combined cfl+jtk unit; jtk *cache* re-migration stays independent/first |
-| **M** "same PR" across separate repos not mechanical | §5 guardrail → "coordinated release train; no tag until consumer matrix green vs candidate SHA" |
+| **B** shared Atlassian config used by cfl *and* jtk → jtk-only port silently ports cfl w/o its §3.2 matrix | §7.4 reworked: a "unit" is a credential scope; shared-config is one combined cfl+jtk unit; jtk *cache* re-migration stays independent/first |
+| **M** "same PR" across separate repos not mechanical | §6 guardrail → "coordinated release train; no tag until consumer matrix green vs candidate SHA" |
 | **M** §3.2 durable-data policy ambiguous | §3.2 now requires each port to *declare* copy-vs-move / second-run / downgrade-fork before impl |
 | **M** §3.2 "neither → created" vs create/no-create split | §3.2 row → "resolved, not created; dir on first write/init only" |
-| **m** §7 regressed to absolutist wording | §7 bullets 1–2 reworded to match §3/§5 (legacy probes exempt) |
+| **m** §8 regressed to absolutist wording | §8 bullets 1–2 reworded to match §3/§6 (legacy probes exempt) |
 | **m** §2 cfl row blurs shared vs legacy config | §2 cfl & jtk rows split into the 2 real surfaces (shared atomic vs legacy pkg) |
 | **n** §3.2 ordered before §3.1 | reordered: §3.1 test isolation, then §3.2 matrix |
 
 Round 3 (re-reviewed): `blockers=0 majors=1 minors=2 nits=1`. Codex
-confirmed §6.4 closes the Atlassian cfl-without-matrix gap. Remaining were
+confirmed §7.4 closes the Atlassian cfl-without-matrix gap. Remaining were
 stale-text consistency slips from the round-2 rework — all fixed:
 
 | Finding | Disposition |
 |---------|-------------|
-| **M** §6 lead-in/step 2 still said "per CLI" — contradicts unit model | reworded to "port one *unit* at a time" (CLI / credential scope / cache-only) |
+| **M** §7 lead-in/step 2 still said "per CLI" — contradicts unit model | reworded to "port one *unit* at a time" (CLI / credential scope / cache-only) |
 | **m** one-line standard still absolutist | → "no hand-rolled *current/target* path resolution" |
 | **m** §1.1 "remaining work" undercounts | expanded to the full 5-item list (relocation + shared + atomic/perms + jtk cache + gro cache/TTL/cmds) |
 | **n** title round counter stale | title now tracks rounds applied (kept in sync each round) |
 
 Round 4 (re-reviewed): `blockers=0 majors=1 minors=2 nits=1`. Codex
-confirmed §6 lead-in/§6.2/§6.4/§2 align on the unit model; residual
-contradictions were §7/§1.1/§3 spots not propagated in round 3 — all fixed:
+confirmed §7 lead-in/§7.2/§7.4/§2 align on the unit model; residual
+contradictions were §8/§1.1/§3 spots not propagated in round 3 — all fixed:
 
 | Finding | Disposition |
 |---------|-------------|
-| **M** §7 rollout bullet still "per-CLI / jtk first / One PR per CLI" | reworded to the unit model (jtk-cache first; Atlassian shared = cfl+jtk unit) |
+| **M** §8 rollout bullet still "per-CLI / jtk first / One PR per CLI" | reworded to the unit model (jtk-cache first; Atlassian shared = cfl+jtk unit) |
 | **m** §1.1 prose "no hand-rolled resolution" unscoped | → "current/target" (legacy probe exempt) |
-| **m** §3 migration "bespoke per CLI" | → "per unit / credential scope" (§6.4) |
+| **m** §3 migration "bespoke per CLI" | → "per unit / credential scope" (§7.4) |
 | **n** disposition table pinned a stale title string | row de-pinned to "tracks rounds applied" |
 
 Round 5 (re-reviewed): **`blockers=0 majors=0 minors=0 nits=0` — CONVERGED.**
-Codex re-read the full doc: §1.1/§2/§3/§5/§6/§7 agree on the unit model
+Codex re-read the full doc: §1.1/§2/§3/§6/§7/§8 agree on the unit model
 (current/target via shared resolver, legacy probes exempt, migration per
 unit/credential scope, jtk-cache independent+first, Atlassian shared config
 a combined cfl+jtk unit with both §3.2 matrices). No remaining findings.
+
+Round 6 (data-pillar pressure-test, 2026-05-28): `blockers=1 majors=3
+minors=2`. Codex read the data-pillar primer first, then diffed §5 against
+HEAD. All accepted; corrections applied in this revision:
+
+| Finding | Disposition |
+|---------|-------------|
+| **B1** Data root conflates portable data, local state, logs, large artifacts — `%APPDATA%` may roam, `XDG_DATA_HOME` is backup-targeted | §1/§1.1/§5.1/§5.2 backing shifted to Path A — Linux `XDG_STATE_HOME`, Windows `%LOCALAPPDATA%`, macOS unchanged. §5.1 collapse note rewritten to honor OS-level collapse + pick spec-correct half where OS doesn't (STATE on Linux). |
+| **M1** Shared-family data naming contradictory — "inherits config rule" then "deferred" | §5.2 rewrote naming rule → **per-binary** (matches cache §4.1, not config §3). Derived program-managed state has program-specific lifecycle, not credential-scope ownership. |
+| **M2** Retention too optional for a pillar that may persist logs / agent outputs | added §5.6 retention guidance — concrete shapes (size/age/count caps), enforcement-timing recommendations, generous-but-finite defaults. Framed as SHOULD per user direction (not MUST), with the explicit note that "we didn't think about retention" is the same failure mode as "we didn't think about TTL" was for cache. |
+| **M3** `working-with-secrets.md` §1.7.2 still framed `config clear --all` as broad factory reset | secrets §1.7.2 + §1.10 cross-doc updated — data pillar explicitly excluded; pointer to `working-with-state.md` §5. |
+| **m1** Nuclear data purge should support `--dry-run` | §5.5 sub-conventions extended — both nuclear and maintenance verbs support `--dry-run`. Nuclear's dry-run reports paths-that-would-be-scrubbed. |
+| **m2** Code comments stale: `statedir/resolver.go:2` refs §5a; `statedirtest/statedirtest.go:3` says "config/cache" | Both package doc comments rewritten to reference §6a and "all four pillars" respectively; resolver doc now also describes data-dir derivation. |
+
+**Fallout from B1 (not in original Codex findings, surfaced during apply):**
+Path A's Linux backing shift (`XDG_STATE_HOME`) means the `statedirtest.Hermetic`
+helper grows from 7 to 8 env vars — `XDG_STATE_HOME` joins the set. Helper code,
+doc-string, test name, and §3.1/§5.3/§6a doc references all updated.
+
+**Round 7 confirmation recommended.** Round 6 was a single pressure-test pass
+with corrections; convergence on §5 should be claimed only after a re-review
+pass returns `blockers=0 majors=0 minors=0`. The doc's status block reflects
+this — §5 is post-Round-6, pre-convergence.
+
+Round 6 cleanup pass (2026-05-28, post-application re-read): Codex re-read
+the working tree after Round 6 corrections landed. No remaining blockers in
+the fourth-pillar architecture; 5 cleanup items surfaced as fallout from the
+Round 6 apply. All accepted:
+
+| Finding | Disposition |
+|---------|-------------|
+| Data deletion semantics — §5 lead-in "removed only by an explicit user-invoked verb" contradicts §5.6's automatic-at-write retention | §5 lead-in rewritten as three explicit invariants: dir survives `config clear --all` / whole-dir nuke is explicit / individual records may be retention-pruned by the program |
+| `working-with-secrets.md` §1.7.2 heading + "machine never having seen the CLI" sticky framing | §1.7.2 renamed to "config + credentials + cache reset"; "machine never having seen the CLI" reframed as "compose `config clear --all` AND `<tool> data purge` for the historical full reset"; §1.10 row #5 already corrected in Round 6 |
+| 8-var propagation incomplete — §7 step 1 / §7.6 step 6 / §8 decision rows / `statedirtest.go:3` still said 7-var | All forward-looking text now reads "8-var" or "full env set"; the two §8 decision rows from 2026-05-19 preserve "7-var" as the historical decision with an explicit "(grew to 8 on 2026-05-28)" annotation; package doc updated |
+| `statedir/resolver.go` package doc overclaims data-dir support — no `Data()` API exists yet | Doc rewritten as future-tense: explicit "NOT YET IMPLEMENTED" status, points at §7 rollout step 7 as the implementation gate (when the first data-holding CLI lands). Also `LegacySource` doc-string §5a → §6a |
+| `data-pillar-primer.md` stale enough to mislead — references old XDG_DATA_HOME / %APPDATA% / --purge-data / 7-var helper | Superseded banner at top with bulleted deltas; primer body preserved as "how the decision was reached" companion (user direction to keep it in place) |

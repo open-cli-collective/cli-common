@@ -1,16 +1,24 @@
 // Package statedir is the shared path/dir resolver for non-secret on-disk
-// state (working-with-state.md §5a). It owns the genuinely-common policy that
+// state (working-with-state.md §6a). It owns the genuinely-common policy that
 // is easy to get subtly wrong per-CLI: the credential-scope config-dir naming
 // rule (§3), the per-binary cache-dir rule (§4.1), and the create-vs-no-create
 // split. It is deliberately NOT a blanket "no file may call os.User*Dir()"
 // ban — a CLI's bespoke legacy-source probing legitimately computes its own
 // paths; that stays per-CLI (see LegacySource).
 //
-// Resolution is always os.UserConfigDir()/os.UserCacheDir() + the scope/tool
-// name. No hand-rolled ~/.config and no %APPDATA% branch: the stdlib helpers
-// honor $XDG_* on Linux and return the OS-native dir on macOS/Windows — that
-// is the standard. A relative $XDG_* yields the stdlib error unchanged (the
-// §1.1 intentional tightening).
+// Resolution for config and cache is always os.UserConfigDir() /
+// os.UserCacheDir() + the scope/tool name. No hand-rolled ~/.config and no
+// %APPDATA% branch: the stdlib helpers honor $XDG_* on Linux and return the
+// OS-native dir on macOS/Windows — that is the standard. A relative $XDG_*
+// yields the stdlib error unchanged (the §1.1 intentional tightening).
+//
+// Data pillar (§5) status: NOT YET IMPLEMENTED in this package. The
+// resolver will gain a Data() method when the first data-holding CLI lands
+// (the §7 rollout step 7 commitment); it will derive XDG_STATE_HOME on
+// Linux, %LOCALAPPDATA% on Windows, and Application Support + data/ subdir
+// on macOS, per §5.2. Adoption is additive — no existing caller changes
+// behavior — so the §6 release-train guardrail does not require a
+// consumer-matrix repin at extraction time.
 package statedir
 
 import (
@@ -122,7 +130,7 @@ func (c Cache) CacheDirEnsured() (string, error) {
 	return dir, nil
 }
 
-// LegacySource is the migration-source enumeration seam (§5a). The resolver
+// LegacySource is the migration-source enumeration seam (§6a). The resolver
 // never enumerates, reads, or interprets these: each CLI computes its own
 // legacy probe paths and decides copy/move/conflict policy per-port (§3.2).
 // This type exists only so the shape and intent are shared and documented; it
