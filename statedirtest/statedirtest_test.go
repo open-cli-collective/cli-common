@@ -9,12 +9,12 @@ import (
 	"github.com/open-cli-collective/cli-common/statedirtest"
 )
 
-func TestHermetic_IsolatesAll7Vars(t *testing.T) {
+func TestHermetic_IsolatesAll8Vars(t *testing.T) {
 	root := statedirtest.Hermetic(t)
 
 	vars := []string{
 		"HOME", "USERPROFILE", "AppData", "LocalAppData",
-		"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+		"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
 	}
 	for _, v := range vars {
 		got := os.Getenv(v)
