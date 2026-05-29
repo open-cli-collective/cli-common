@@ -1,10 +1,10 @@
 package credstore
 
 // Real OS-keyring backends, per the Secret-Handling Standard §1.4 and
-// §2.1. Together with linuxfallback.go, this file isolates the
-// github.com/byteness/keyring import — CLIs depend on credstore, never
-// on the library directly. Backend selection has already happened
-// (selectBackend); this file just constructs and adapts the chosen one.
+// §2.1. Backend selection has already happened (selectBackend); this
+// file adapts the selected backend to Store. Build-tagged companions
+// provide the actual backend opener: ByteNess keyring for CGO/Windows,
+// and direct lower-level backends for affected static Unix builds.
 
 import (
 	"errors"
@@ -13,22 +13,45 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-
-	"github.com/byteness/keyring"
 )
 
-// osKeyringBackend adapts a keyring.Keyring to the internal backend
-// interface. backendKind is the resolved Backend (named so it does not
-// collide with the kind() method).
+var errKeyringItemNotFound = errors.New("credstore: keyring item not found")
+
+type promptFunc func(string) (string, error)
+
+type keyringItem struct {
+	key  string
+	data []byte
+}
+
+type keyringBackend interface {
+	get(itemKey string) (keyringItem, error)
+	set(keyringItem) error
+	remove(itemKey string) error
+	keys() ([]string, error)
+}
+
+type backendConfig struct {
+	serviceName      string
+	allowedBackend   Backend
+	fileDir          string
+	filePasswordFunc promptFunc
+	passDir          string
+	passCmd          string
+	passPrefix       string
+}
+
+// osKeyringBackend adapts a platform keyring implementation to the
+// internal backend interface. backendKind is the resolved Backend
+// (named so it does not collide with the kind() method).
 type osKeyringBackend struct {
-	kr          keyring.Keyring
+	kr          keyringBackend
 	backendKind Backend
 }
 
-// openOSBackend opens exactly the selected backend. AllowedBackends is
-// pinned to the single chosen type so the library never re-prioritizes
-// after our §1.4 selection. Per-backend construction (file dir +
-// passphrase, pass per-service prefix) lives in buildKeyringConfig.
+// openOSBackend opens exactly the selected backend. The opener is
+// build-tagged so static Unix builds do not import ByteNess keyring and
+// therefore do not compile its unused 1Password backends.
 func openOSBackend(kind Backend, service string, opts *Options, getenv func(string) string) (backend, error) {
 	if err := preflightOSBackend(kind); err != nil {
 		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
@@ -37,7 +60,7 @@ func openOSBackend(kind Backend, service string, opts *Options, getenv func(stri
 	if err != nil {
 		return nil, err
 	}
-	kr, err := keyring.Open(cfg)
+	kr, err := openKeyringBackend(kind, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
 	}
@@ -45,27 +68,14 @@ func openOSBackend(kind Backend, service string, opts *Options, getenv func(stri
 }
 
 // preflightOSBackend runs cheap, actionable pre-construction checks for
-// backends whose ByteNess opener returns a useful error message that
-// keyring.Open then swallows. ByteNess's Open iterates AllowedBackends
-// and `continue`s past any opener that returns an error, so a useful
-// "pass program is not available" from the pass opener is lost and the
-// user sees a generic "Specified keyring backend not available". Catch
-// the common cases here so users get actionable messages.
-//
-// When adding a new Backend constant, decide whether it needs a
-// preflight check (cheap pre-construction validation that produces a
-// better error than ByteNess's generic one), or whether ByteNess's own
-// opener error is already actionable enough.
+// backends whose opener may otherwise return a generic availability
+// error. When adding a new Backend constant, decide whether it needs a
+// preflight check or whether the opener error is actionable enough.
 func preflightOSBackend(kind Backend) error {
 	switch kind {
 	case BackendPass:
-		// byteness/keyring/pass.go is `//go:build !windows`. Catch the
-		// Windows case before LookPath: a Windows user with a `pass`
-		// shim on PATH (Git-for-Windows, WSL bridge) would otherwise
-		// pass preflight and then hit a generic ByteNess "backend not
-		// available" message from keyring.Open. Surface the platform
-		// constraint directly with no install hints (those are Linux/
-		// macOS-specific and would be misleading on Windows).
+		// ByteNess's pass backend is `//go:build !windows`; the direct
+		// no-CGO backend keeps the same platform contract.
 		if runtime.GOOS == "windows" {
 			return fmt.Errorf("the pass backend is not supported on Windows; use --backend wincred (default) or --backend file")
 		}
@@ -73,49 +83,46 @@ func preflightOSBackend(kind Backend) error {
 			return fmt.Errorf("the pass(1) CLI is not on $PATH; install it (e.g. `apt install pass` / `brew install pass`) and run `pass init <gpg-key-id>` before selecting --backend pass")
 		}
 	case BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory:
-		// No preflight check — ByteNess's openers (or store.Open's
-		// memory short-circuit) already return actionable errors.
+		// No preflight check — the openers (or store.Open's memory
+		// short-circuit) already return actionable errors.
 	}
 	return nil
 }
 
-// buildKeyringConfig assembles the keyring.Config for the chosen backend.
-// Extracted from openOSBackend so per-backend wiring is unit-testable
-// without opening a real keyring.
-func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func(string) string) (keyring.Config, error) {
-	cfg := keyring.Config{
-		ServiceName:     service,
-		AllowedBackends: []keyring.BackendType{keyring.BackendType(kind)},
+// buildKeyringConfig assembles the selected backend's construction
+// config. Extracted from openOSBackend so per-backend wiring is
+// unit-testable without opening a real keyring.
+func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func(string) string) (backendConfig, error) {
+	cfg := backendConfig{
+		serviceName:    service,
+		allowedBackend: kind,
 	}
 	switch kind {
 	case BackendFile:
 		dir, err := fileKeyringDir(service, getenv)
 		if err != nil {
-			return keyring.Config{}, err
+			return backendConfig{}, err
 		}
-		cfg.FileDir = dir
+		cfg.fileDir = dir
 		pwFunc, err := filePasswordFunc(service, opts, getenv)
 		if err != nil {
-			return keyring.Config{}, err
+			return backendConfig{}, err
 		}
-		cfg.FilePasswordFunc = pwFunc
+		cfg.filePasswordFunc = pwFunc
 	case BackendPass:
 		// ByteNess's pass backend ignores ServiceName — items are
-		// stored at filepath.Join(PassDir, PassPrefix, key) + ".gpg"
-		// (see byteness/keyring/pass.go). Without a per-service
-		// PassPrefix every cli-common consumer would share a flat
-		// ~/.password-store namespace and collide on identical key
-		// names. Scope the prefix to the service so each CLI gets
-		// its own subtree.
-		cfg.PassPrefix = service
+		// stored at filepath.Join(PassDir, PassPrefix, key) + ".gpg".
+		// Without a per-service PassPrefix every cli-common consumer
+		// would share a flat ~/.password-store namespace and collide on
+		// identical key names. Scope the prefix to the service so each
+		// CLI gets its own subtree.
+		cfg.passPrefix = service
 	case BackendKeychain, BackendWinCred, BackendSecretService:
-		// No additional construction — ByteNess uses ServiceName
-		// directly for these.
+		// No additional construction — these use ServiceName directly.
 	case BackendMemory:
 		// BackendMemory short-circuits in store.Open before reaching
 		// openOSBackend; this arm exists only to keep the exhaustive
-		// switch honest. If a future change starts routing memory
-		// through here, no extra construction is needed.
+		// switch honest.
 	}
 	return cfg, nil
 }
@@ -143,10 +150,10 @@ func fileKeyringDir(service string, getenv func(string) string) (string, error) 
 // <SERVICE>_KEYRING_PASSPHRASE env var (the one sanctioned runtime
 // secret-material env var, §1.4), else opts.FilePassphrase, else
 // fail-closed with an actionable, value-free error.
-func filePasswordFunc(service string, opts *Options, getenv func(string) string) (keyring.PromptFunc, error) {
+func filePasswordFunc(service string, opts *Options, getenv func(string) string) (promptFunc, error) {
 	envVar := envServicePrefix(service) + "_KEYRING_PASSPHRASE"
 	if v := getenv(envVar); v != "" {
-		return keyring.FixedStringPrompt(v), nil
+		return fixedStringPrompt(v), nil
 	}
 	if opts != nil && opts.FilePassphrase != nil {
 		fn := opts.FilePassphrase
@@ -161,44 +168,49 @@ func filePasswordFunc(service string, opts *Options, getenv func(string) string)
 	return nil, fmt.Errorf("%w: set %s or supply Options.FilePassphrase", ErrFilePassphraseRequired, envVar)
 }
 
+func fixedStringPrompt(value string) promptFunc {
+	return func(string) (string, error) {
+		return value, nil
+	}
+}
+
 func (b *osKeyringBackend) kind() Backend { return b.backendKind }
 
 func (b *osKeyringBackend) get(itemKey string) (string, error) {
-	it, err := b.kr.Get(itemKey)
+	it, err := b.kr.get(itemKey)
 	if err != nil {
-		if errors.Is(err, keyring.ErrKeyNotFound) {
+		if errors.Is(err, errKeyringItemNotFound) {
 			return "", ErrNotFound
 		}
 		return "", fmt.Errorf("credstore: %s get %q: %w", b.backendKind, itemKey, err)
 	}
-	return string(it.Data), nil
+	return string(it.data), nil
 }
 
-// set has no atomic compare-and-swap: the underlying keyring library
-// exposes none, so the no-overwrite guard is a best-effort
-// Get-then-Set. Under a concurrent cross-process writer the check can
-// race (§1.5.1 "practical atomicity") — exact only for the in-memory
-// backend.
+// set has no atomic compare-and-swap: the underlying keyring backends
+// expose none, so the no-overwrite guard is a best-effort Get-then-Set.
+// Under a concurrent cross-process writer the check can race (§1.5.1
+// "practical atomicity") — exact only for the in-memory backend.
 func (b *osKeyringBackend) set(itemKey, value string, overwrite bool) error {
 	if !overwrite {
-		switch _, err := b.kr.Get(itemKey); {
+		switch _, err := b.kr.get(itemKey); {
 		case err == nil:
 			return ErrExists
-		case errors.Is(err, keyring.ErrKeyNotFound):
+		case errors.Is(err, errKeyringItemNotFound):
 			// not present — fall through to write
 		default:
 			return fmt.Errorf("credstore: %s set %q (overwrite pre-check): %w", b.backendKind, itemKey, err)
 		}
 	}
-	if err := b.kr.Set(keyring.Item{Key: itemKey, Data: []byte(value)}); err != nil {
+	if err := b.kr.set(keyringItem{key: itemKey, data: []byte(value)}); err != nil {
 		return fmt.Errorf("credstore: %s set %q: %w", b.backendKind, itemKey, err)
 	}
 	return nil
 }
 
 func (b *osKeyringBackend) delete(itemKey string) error {
-	if err := b.kr.Remove(itemKey); err != nil {
-		if errors.Is(err, keyring.ErrKeyNotFound) {
+	if err := b.kr.remove(itemKey); err != nil {
+		if errors.Is(err, errKeyringItemNotFound) {
 			return ErrNotFound
 		}
 		return fmt.Errorf("credstore: %s delete %q: %w", b.backendKind, itemKey, err)
@@ -207,8 +219,8 @@ func (b *osKeyringBackend) delete(itemKey string) error {
 }
 
 func (b *osKeyringBackend) exists(itemKey string) (bool, error) {
-	if _, err := b.kr.Get(itemKey); err != nil {
-		if errors.Is(err, keyring.ErrKeyNotFound) {
+	if _, err := b.kr.get(itemKey); err != nil {
+		if errors.Is(err, errKeyringItemNotFound) {
 			return false, nil
 		}
 		return false, fmt.Errorf("credstore: %s exists %q: %w", b.backendKind, itemKey, err)
@@ -217,15 +229,14 @@ func (b *osKeyringBackend) exists(itemKey string) (bool, error) {
 }
 
 func (b *osKeyringBackend) listKeys() ([]string, error) {
-	keys, err := b.kr.Keys()
+	keys, err := b.kr.keys()
 	if err != nil {
 		return nil, fmt.Errorf("credstore: %s listKeys: %w", b.backendKind, err)
 	}
 	return keys, nil
 }
 
-// close is a no-op: the underlying keyring library exposes no Close.
-// The Store still best-effort clears the in-memory backend; OS
-// keyrings own their own lifecycle and there is nothing to release
-// here.
+// close is a no-op: the underlying keyring implementations expose no
+// Close. The Store still best-effort clears the in-memory backend; OS
+// keyrings own their own lifecycle and there is nothing to release here.
 func (b *osKeyringBackend) close() error { return nil }
