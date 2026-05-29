@@ -59,6 +59,13 @@ actually has working Keychain support — two checks, both observed in
    CLI whose `config show` can't surface the backend declares its own probe in
    the manifest.
 
+**Runner:** a single Apple Silicon macOS runner satisfies both — `otool -L`
+*statically inspects* the amd64 Mach-O (it reads the file, does not execute it,
+so no Rosetta is needed) and the arm64 binary runs natively. No separate Intel
+(`macos-13`) leg is required for this gate. Pin the runner to the current
+known-good label (e.g. `macos-15`) rather than the moving `macos-latest`, as the
+release workflows already do.
+
 This is regression insurance from the credstore keyring saga: a silently
 `CGO_ENABLED=0` darwin build compiles and passes tests but ships **without
 Keychain support**, breaking every macOS user on upgrade. The link check proves
@@ -91,7 +98,9 @@ using credstore's Keychain backend MUST gate the release on both.
   alias copies take the canonical cask's URL/checksum verbatim (never recompute)
   and differ only in token/name. One atomic push means there is no window where
   the canonical cask is live but its alias isn't; the post-step MUST fail visibly
-  on any push error.
+  on any push error — it MUST NOT set `continue-on-error: true` and MUST exit
+  non-zero so the release job fails (a swallowed error here leaves the tap with
+  no cask at all).
 - The push to the tap uses a dedicated **`HOMEBREW_TAP_TOKEN`** (§6).
 - **Current split (divergences, §10):** `google-readonly`, `salesforce-cli`,
   `hubspot-cli`, and both atlassian tools already use goreleaser `homebrew_casks`;
@@ -156,6 +165,12 @@ the shared repo via **`repository_dispatch`**:
 - token: **`LINUX_PACKAGES_DISPATCH_TOKEN`**
 - **`continue-on-error: true`** — a publish hiccup MUST NOT fail the release.
   But the failure MUST still be surfaced, not swallowed (`release.md` §4.1).
+  Surface it concretely — a follow-up step keyed on the dispatch step's outcome:
+
+  ```yaml
+  - if: steps.linux_dispatch.outcome == 'failure'
+    run: echo '::warning::linux-packages dispatch failed — packages not refreshed' >> "$GITHUB_STEP_SUMMARY"
+  ```
 
 ### §5.3 What `linux-packages` does on receipt
 Its `receive-package.yml` downloads the `.deb`/`.rpm` from the source release,

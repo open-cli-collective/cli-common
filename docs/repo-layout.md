@@ -152,6 +152,11 @@ defaults (no config file) is non-conformant.
   **composite actions** (`ci.md` §7), these are bare check names and **stay bare
   on migration** — no branch-protection rewrite (the context-rename hazard only
   applies to the reusable-workflow form, which CI does not use).
+- **Sequencing (load-bearing):** add a required check to branch protection only
+  *after* the workflow that produces it exists and has run green on the repo —
+  `pr-title` after the composite is wired, `identity-check` after the composite
+  ships **and** `packaging/identity.yml` exists. A required check that no
+  workflow ever reports stays permanently pending and silently blocks every PR.
 - Require **signed commits**.
 - Require **linear history**.
 - No force pushes.
@@ -168,7 +173,16 @@ defaults (no config file) is non-conformant.
 - **Conventional commits** drive releases (`release.md` §1).
 - Commit messages MUST NOT mention AI tooling (Claude, Anthropic, ChatGPT,
   Copilot, etc.). Enforce with a `commit-msg` hook that greps a blocklist and
-  rejects on match (the reference hook lives in `CLI_CONVENTIONS.md`).
+  rejects on match. Reference implementation (track it as
+  `scripts/hooks/commit-msg` and wire via `git config core.hooksPath scripts/hooks`):
+
+  ```sh
+  #!/bin/sh
+  if grep -iEq 'claude|anthropic|chatgpt|copilot|codex' "$1"; then
+    echo "commit message references AI tooling — remove it (repo-layout.md §7)" >&2
+    exit 1
+  fi
+  ```
 
 ---
 

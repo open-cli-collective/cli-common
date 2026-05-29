@@ -185,6 +185,15 @@ same machinery **per tool**:
   runs *before* the rename, so any release-download URL it emits must be
   templated to the final prefixed tag or it will 404 (see atlassian-cli's
   `CLAUDE.md` and the `homebrew_casks` `url.template`).
+- **Partial-failure sharp edge:** if `release.yml` fails *after* goreleaser
+  publishes the GitHub release under the temporary bare tag but *before* the
+  re-tag/cleanup completes, a release is left under a tag that then gets deleted
+  — an inconsistent state §4.1's re-run idempotency does not by itself resolve.
+  Recovery: delete the orphaned temp-tag release, then re-run from the
+  tool-prefixed tag. The temp tag carries `<run>` so it is unique per run, but
+  two tools (or a manual re-run) can still target the same bare `v<base>.<run>`
+  namespace — the workflow MUST fail fast if the temp tag already exists rather
+  than clobber an in-flight release.
 
 A new monorepo follows this shape: one auto-release + one release workflow per
 shipped binary, path-filtered, prefix-tagged.
@@ -216,6 +225,15 @@ jobs:
 
 Inputs: `tag-prefix`, `version-file`, `release-paths`, `tool-paths`. Secret:
 `tag-token` (the §3.1 dedicated token). Pin the `@v1` ref.
+
+**GitHub App alternative (§3.1 preferred).** A caller job that `uses:` a
+reusable workflow cannot also run `steps:`, so the App-token mint can't live in
+this job. Two correct shapes: (a) the **reusable workflow accepts** `app-id` +
+`private-key` and mints the installation token internally via
+`actions/create-github-app-token` (keeps the caller thin — recommended), or
+(b) a **prior job** mints the token, exposes it as a job output, and the
+auto-release job consumes it through `needs`. Either way the App path replaces
+the `RELEASE_TAG_TOKEN` PAT secret above.
 
 ---
 

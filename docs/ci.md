@@ -70,7 +70,8 @@ mis-trigger or silently skip a release.
 *per leg* (`build (ubuntu-latest)`, `build (windows-latest)`, …), and that
 shifting set is not a stable name branch protection can require. So the OS matrix
 is a **non-required** `build-platform` job, and a final **required** `build` job
-(`needs: build-platform`, `if: always()`) fails unless every leg passed. Branch
+(`needs: build-platform`, `if: always()`) fails if any leg failed or was
+cancelled (a skipped leg does not fail it). Branch
 protection requires the stable `build`; the per-leg names stay informational. See
 §7 for the shape.
 
@@ -88,9 +89,11 @@ hardcoding a second value that can silently drift:
     go-version-file: go.mod
 ```
 
-Pinning a literal `go-version: '1.26'` in the workflow is permitted only if it
-is kept in lockstep with `go.mod`; `go-version-file` is preferred because it
-removes the second source. The current version skew (`sfdc` on 1.24, and
+`go-version-file` is **required for new CLIs** — it removes the second source
+entirely. A literal `go-version:` pin is tolerated only as a transitional state
+in not-yet-migrated repos and is a divergence to close (§8), never an option for
+new code: in practice the two values drift. The current version skew (`sfdc` on
+1.24, and
 `hubspot` declaring `1.23.0` in `go.mod` while CI pins `1.22`) is exactly the
 drift this rule prevents (§8).
 
@@ -182,7 +185,10 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - run: test "${{ needs.build-platform.result }}" = "success"
+      # fail only on a real failure/cancellation; a skipped leg (e.g. a future
+      # path filter) must NOT fail the gate — which `= "success"` would do
+      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: echo "::error::a build-platform leg failed or was cancelled" && exit 1
   test:
     runs-on: ubuntu-latest
     steps:
@@ -194,7 +200,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: open-cli-collective/.github/actions/go-lint@v1
-        with: { go-version-file: go.mod, golangci-version: v2.12.2 }
+        with: { go-version-file: go.mod }   # golangci version is pinned inside the composite (§5)
   identity-check:
     runs-on: ubuntu-latest
     steps:
