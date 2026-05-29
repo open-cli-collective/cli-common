@@ -6,8 +6,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/byteness/keyring"
 )
 
 // TestFileBackendRoundTrip exercises the real encrypted-file backend
@@ -167,47 +165,44 @@ func TestFileBackendPassphraseFuncError(t *testing.T) {
 	}
 }
 
-// fakeKeyring is an in-test keyring.Keyring with programmable errors,
+// fakeKeyring is an in-test keyringBackend with programmable errors,
 // used to exercise osKeyringBackend's error mapping/wrapping arms
 // deterministically without a real OS keyring.
 type fakeKeyring struct {
-	items                           map[string]keyring.Item
+	items                           map[string]keyringItem
 	getErr, setErr, delErr, keysErr error
 }
 
-func newFakeKeyring() *fakeKeyring { return &fakeKeyring{items: map[string]keyring.Item{}} }
+func newFakeKeyring() *fakeKeyring { return &fakeKeyring{items: map[string]keyringItem{}} }
 
-func (f *fakeKeyring) Get(k string) (keyring.Item, error) {
+func (f *fakeKeyring) get(k string) (keyringItem, error) {
 	if f.getErr != nil {
-		return keyring.Item{}, f.getErr
+		return keyringItem{}, f.getErr
 	}
 	it, ok := f.items[k]
 	if !ok {
-		return keyring.Item{}, keyring.ErrKeyNotFound
+		return keyringItem{}, errKeyringItemNotFound
 	}
 	return it, nil
 }
-func (f *fakeKeyring) GetMetadata(string) (keyring.Metadata, error) {
-	return keyring.Metadata{}, nil
-}
-func (f *fakeKeyring) Set(it keyring.Item) error {
+func (f *fakeKeyring) set(it keyringItem) error {
 	if f.setErr != nil {
 		return f.setErr
 	}
-	f.items[it.Key] = it
+	f.items[it.key] = it
 	return nil
 }
-func (f *fakeKeyring) Remove(k string) error {
+func (f *fakeKeyring) remove(k string) error {
 	if f.delErr != nil {
 		return f.delErr
 	}
 	if _, ok := f.items[k]; !ok {
-		return keyring.ErrKeyNotFound
+		return errKeyringItemNotFound
 	}
 	delete(f.items, k)
 	return nil
 }
-func (f *fakeKeyring) Keys() ([]string, error) {
+func (f *fakeKeyring) keys() ([]string, error) {
 	if f.keysErr != nil {
 		return nil, f.keysErr
 	}
@@ -355,8 +350,8 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildKeyringConfig: %v", err)
 		}
-		if cfg.PassPrefix != "atlassian-cli" {
-			t.Errorf("PassPrefix = %q, want %q", cfg.PassPrefix, "atlassian-cli")
+		if cfg.passPrefix != "atlassian-cli" {
+			t.Errorf("passPrefix = %q, want %q", cfg.passPrefix, "atlassian-cli")
 		}
 	})
 
@@ -365,8 +360,8 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildKeyringConfig: %v", err)
 		}
-		if cfg.PassPrefix != "slack-chat-api" {
-			t.Errorf("PassPrefix = %q, want %q", cfg.PassPrefix, "slack-chat-api")
+		if cfg.passPrefix != "slack-chat-api" {
+			t.Errorf("passPrefix = %q, want %q", cfg.passPrefix, "slack-chat-api")
 		}
 	})
 
@@ -386,11 +381,11 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildKeyringConfig file: %v", err)
 		}
-		if cfg.PassPrefix != "" {
-			t.Errorf("PassPrefix = %q, want empty for file backend", cfg.PassPrefix)
+		if cfg.passPrefix != "" {
+			t.Errorf("passPrefix = %q, want empty for file backend", cfg.passPrefix)
 		}
-		if cfg.FileDir == "" {
-			t.Errorf("FileDir is empty; expected file backend to set it")
+		if cfg.fileDir == "" {
+			t.Errorf("fileDir is empty; expected file backend to set it")
 		}
 	})
 }
