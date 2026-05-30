@@ -12,6 +12,8 @@ Companion pillars:
 - `ci.md` — invokes the Makefile targets (§4) and lint config (§5) defined here.
 - `release.md` — reads `version.txt` (§2) and the commit conventions (§7).
 - `distribution.md` — reads `.goreleaser.*` (§2).
+- `agent-implementation.md` — owns how agent entrypoint files are used; this
+  doc owns that the files exist in the repo skeleton.
 - The behavior-axis docs (`command-surface.md`, `output-and-rendering.md`,
   `working-with-secrets.md`, `working-with-state.md`, `scriptability.md`) govern
   what lives *inside* the directories below. This doc owns the skeleton; they
@@ -58,7 +60,9 @@ starts from this tree. The three-layer seam — `client` (data) → `output`
 |---|---|---|
 | `README.md` | MUST | install + usage |
 | `LICENSE` | MUST | MIT |
-| `CLAUDE.md` | MUST | per-repo agent guidance |
+| `AGENTS.md` | MUST | thin agent entrypoint index; peer of `CLAUDE.md` |
+| `CLAUDE.md` | MUST | thin agent entrypoint index; peer of `AGENTS.md` |
+| `docs/development.md` | MUST | repo-local facts; tool-local equivalent allowed in monorepos |
 | `.golangci.yml` | MUST | §5 |
 | `Makefile` | MUST | §4 |
 | `version.txt` | MUST | `release.md` §2 source-of-truth |
@@ -68,9 +72,16 @@ starts from this tree. The three-layer seam — `client` (data) → `output`
 | `CONTRIBUTING.md` | SHOULD | |
 | `CHANGELOG.md` | SHOULD | release-generated |
 
+Agent entrypoints are indexes, not containers for copied policy. Keep
+repo-specific facts in `docs/development.md`; keep shared standards in
+`cli-common/docs`; keep shared automation in `open-cli-collective/.github`.
+See `agent-implementation.md` for the full source-of-truth and reference-link
+policy.
+
 Monorepo (`atlassian-cli`): per-tool files live under `tools/<tool>/`
 (`version.txt`, `.goreleaser-<tool>.yml`); repo-root carries the shared
-`go.work`, `LICENSE`, and CI.
+`go.work`, `LICENSE`, and CI. Tool-local agent entrypoints and
+`docs/development.md` equivalents are allowed where they reduce navigation cost.
 
 ---
 
@@ -193,7 +204,8 @@ defaults (no config file) is non-conformant.
   carries three configs (`shared/`, `tools/cfl`, `tools/jtk`), all on the §5 set.
 - **Linter floor not yet met** by `slack-chat-api` and `salesforce-cli` (lean
   6-linter core, missing `revive`/`gosec`/`errorlint`/`exhaustive`) (§5).
-- **`CLAUDE.md` missing** in `codereview-cli` (§2).
+- **Agent guidance entrypoints missing** in `hubspot-cli` and `salesforce-cli`:
+  both have `CLAUDE.md` but lack `AGENTS.md` and `docs/development.md` (§2).
 - **`CONTRIBUTING.md` / `CHANGELOG.md` gaps** in `google-readonly`,
   `salesforce-cli`, `hubspot-cli`, and `atlassian-cli` root (§2).
 - **Go versions**: `hubspot-cli` declares `go 1.23.0` in `go.mod` but its CI pins
