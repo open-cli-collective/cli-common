@@ -45,16 +45,24 @@ When a repo-local guidance file references shared standards or automation, the
 GitHub URL is the source of truth. A relative local path may be included as a
 convenience for side-by-side workspaces, but it is never the authority.
 
-Use the shared citation shape from `docs/README.md`:
+Use the shared citation shape from `docs/README.md`. From a repo-root file like
+`AGENTS.md` or `CLAUDE.md`:
 
 ```md
 Source of truth: https://github.com/open-cli-collective/cli-common/blob/main/docs/command-surface.md
 Local convenience copy, if present: `../cli-common/docs/command-surface.md`
 ```
 
-Nested guidance files must adjust the local path relative to their own location.
-A broken local shortcut is worse than no shortcut because it trains agents to
-trust a path that does not resolve.
+From `docs/development.md` in that same repo:
+
+```md
+Source of truth: https://github.com/open-cli-collective/cli-common/blob/main/docs/command-surface.md
+Local convenience copy, if present: `../../cli-common/docs/command-surface.md`
+```
+
+Nested guidance files must adjust the local path relative to their own
+location. A broken local shortcut is worse than no shortcut because it trains
+agents to trust a path that does not resolve.
 
 ---
 
