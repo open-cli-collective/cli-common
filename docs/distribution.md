@@ -326,6 +326,18 @@ One identity file **per binary** — `tools/cfl/packaging/identity.yml`,
 map) — so each binary's release identity stays explicit. The alias cask
 (`jira-ticket-cli` ← `jtk`) is just an `alias_casks` entry.
 
+**Path resolution is asymmetric — tool-local identity, repo-root release config.**
+The tool-local identity (the manifest, its `packaging/*` dirs, and `version_file`)
+resolves relative to the tool root (`identity-check`'s `working-directory`, e.g.
+`tools/cfl`). But `goreleaser_config` resolves relative to the **repo root**
+(`identity-check`'s `repo-root` input, default `.`), because GoReleaser is a
+repo-root release operation even in a monorepo — it needs `go.work`, shared
+modules, root tags, and a root `dist/`, and the configs live at the root
+(`.goreleaser-cfl.yml` with per-build `dir: tools/cfl`). The reusable `release.yml`
+already runs GoReleaser from the repo root, so the same `goreleaser_config` value
+serves both. A caller therefore passes `working-directory: tools/cfl` and leaves
+`repo-root` at `.`. (For a flat repo both are `.`, so this is invisible.)
+
 The nfpm `package_name` and the dispatch `package` key MUST match the manifest's
 `packages.linux.package_name` — a mismatch routes packages under the wrong name
 in `linux-packages`.
