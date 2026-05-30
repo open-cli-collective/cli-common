@@ -13,7 +13,9 @@ the source of truth for how Collective CLIs handle secrets and credentials.
 
 The Collective's cross-CLI standards are versioned here, alongside the code
 they govern, so consumers pin them with the same module version. See
-[`docs/README.md`](docs/README.md) for a one-line "use this when…" index:
+[`docs/README.md`](docs/README.md) for a one-line "use this when…" index and
+the convention for citing GitHub sources of truth with optional local workspace
+copies:
 
 - [`docs/working-with-secrets.md`](docs/working-with-secrets.md) — secret
   state (OS keyring; implemented by `credstore`).

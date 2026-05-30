@@ -7,6 +7,29 @@ Nine normative documents define how every Open CLI Collective CLI is built and b
 
 The two axes are largely orthogonal: the behavior axis governs the *program*, the repo axis governs the *project*. When an item touches both, the behavior axis wins on binary behavior and the repo axis wins on project mechanics.
 
+## Referencing these standards
+
+When another repository or agent entrypoint references shared standards, the
+GitHub URL is the source of truth. An adjacent local path may be included as a
+convenience for workspaces that keep the Open CLI Collective repos side by side,
+but it is only a shortcut. The local path should be correct relative to the file
+that contains the reference; nested guidance may need a different path depth.
+
+Use this shape:
+
+```md
+Source of truth: https://github.com/open-cli-collective/cli-common/blob/main/docs/release.md
+Local convenience copy, if present: `../cli-common/docs/release.md`
+```
+
+For shared automation, use the same shape without duplicating workflow or action
+mechanics:
+
+```md
+Source of truth: https://github.com/open-cli-collective/.github
+Local convenience copy, if present: `../.github`
+```
+
 **Behavior-axis conflict resolution order**, highest to lowest authority:
 
 1. `working-with-secrets.md` (foundational, predates the rest)
