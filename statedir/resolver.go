@@ -13,8 +13,9 @@
 // yields the stdlib error unchanged (the §1.1 intentional tightening).
 //
 // Resolution for data follows working-with-state.md §5.2: XDG_STATE_HOME on
-// Linux, %LOCALAPPDATA% on Windows, and Application Support + data/ on macOS.
-// Data is per-binary like cache, not shared by credential scope like config.
+// Linux, %LOCALAPPDATA% + data/ on Windows, and Application Support + data/ on
+// macOS. Data is per-binary like cache, not shared by credential scope like
+// config.
 package statedir
 
 import (
@@ -190,7 +191,7 @@ func dataDirFor(tool, goos string, getenv func(string) string, userHomeDir func(
 		if localAppData == "" {
 			return "", errors.New("statedir: resolving user data dir: LocalAppData is empty")
 		}
-		return filepath.Join(localAppData, tool), nil
+		return filepath.Join(localAppData, tool, "data"), nil
 	default:
 		return "", fmt.Errorf("statedir: resolving user data dir: unsupported GOOS %q", goos)
 	}

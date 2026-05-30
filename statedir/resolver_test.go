@@ -237,7 +237,7 @@ func currentPlatformDataDir(t *testing.T, tool string) string {
 		if localAppData == "" {
 			localAppData = os.Getenv("LOCALAPPDATA")
 		}
-		return filepath.Join(localAppData, tool)
+		return filepath.Join(localAppData, tool, "data")
 	default:
 		t.Fatalf("unsupported GOOS %q", runtime.GOOS)
 		return ""

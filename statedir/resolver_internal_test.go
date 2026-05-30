@@ -41,14 +41,14 @@ func TestDataDirForPlatforms(t *testing.T) {
 			goos: "windows",
 			env:  map[string]string{"LocalAppData": "/localappdata"},
 			home: "/unused",
-			want: filepath.Join("/localappdata", "cr"),
+			want: filepath.Join("/localappdata", "cr", "data"),
 		},
 		{
 			name: "windows uppercase local app data",
 			goos: "windows",
 			env:  map[string]string{"LOCALAPPDATA": "/localappdata"},
 			home: "/unused",
-			want: filepath.Join("/localappdata", "cr"),
+			want: filepath.Join("/localappdata", "cr", "data"),
 		},
 	}
 
