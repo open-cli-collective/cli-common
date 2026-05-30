@@ -25,7 +25,7 @@ A CLI puts exactly four kinds of state on disk/keyring. Each has one owner:
 | **Secrets** | access credentials | OS keyring (`cli-common/credstore`) | `working-with-secrets.md` |
 | **Config** | durable, authored, non-secret | `os.UserConfigDir()/<tool>` | **this doc §3** |
 | **Cache** | disposable, derived, regenerable | `os.UserCacheDir()/<tool>` | **this doc §4** |
-| **Data** | program-managed working state | `XDG_STATE_HOME` (Linux) / `%LOCALAPPDATA%` (Windows) / Application Support + `data/` subdir (macOS) | **this doc §5** |
+| **Data** | program-managed working state | `XDG_STATE_HOME` (Linux) / `%LOCALAPPDATA%` + `data\` subdir (Windows) / Application Support + `data/` subdir (macOS) | **this doc §5** |
 
 Secrets are out of scope here — see `working-with-secrets.md`. The defining
 distinctions this doc rests on:
@@ -45,7 +45,7 @@ accretion.
 
 The one-line standard:
 
-> Config → `os.UserConfigDir()/<tool>` · Cache → `os.UserCacheDir()/<tool>` · Data → `XDG_STATE_HOME/<tool>` (Linux) / `%LOCALAPPDATA%\<tool>` (Windows) / `~/Library/Application Support/<tool>/data/` (macOS) · Secrets → OS keyring
+> Config → `os.UserConfigDir()/<tool>` · Cache → `os.UserCacheDir()/<tool>` · Data → `XDG_STATE_HOME/<tool>` (Linux) / `%LOCALAPPDATA%\<tool>\data` (Windows) / `~/Library/Application Support/<tool>/data/` (macOS) · Secrets → OS keyring
 >
 > **Use the Go stdlib helper where one exists. No hand-rolled
 > *current/target* path resolution** (a CLI's bespoke *legacy-source*
@@ -122,10 +122,12 @@ helper — the `cli-common` resolver derives it per platform (§5.2):
 - **macOS:** `~/Library/Application Support/<dir>/data/` — Apple's
   Application Support is the catch-all root for both config and data; the
   `data/` subdir disambiguates pillars within the tool's subtree.
-- **Windows:** `%LOCALAPPDATA%\<dir>` — explicitly **not** `%APPDATA%`
+- **Windows:** `%LOCALAPPDATA%\<dir>\data` — explicitly **not** `%APPDATA%`
   (Roaming). Roaming would sync the data dir (SQLite, logs, agent outputs)
   over the network for users on roaming profiles; LocalAppData is the
-  machine-local, non-roaming home that fits the working-state use case.
+  machine-local, non-roaming home that fits the working-state use case. The
+  `data\` subdir disambiguates data from cache inside the LocalAppData tool
+  subtree.
 
 No existing CLI holds data today — the pillar is greenfield, additive to
 the rollout (§7).
@@ -388,12 +390,12 @@ Go's stdlib provides no `UserDataDir` helper — derive it via the shared
   Support is the catch-all root for both config and data on macOS; the
   `data/` subdir disambiguates pillars within the tool's subtree. (macOS
   has no STATE analog; Application Support is the pragmatic home.)
-- **Windows:** `%LOCALAPPDATA%\<dir>`. Explicitly **not** `%APPDATA%`
+- **Windows:** `%LOCALAPPDATA%\<dir>\data`. Explicitly **not** `%APPDATA%`
   (Roaming). Roaming would sync the data dir over the network for users
   on roaming profiles — disastrous for SQLite, logs, agent outputs,
   large artifacts. `%LOCALAPPDATA%` is the machine-local, non-roaming
-  home that fits the working-state use case. No `data\` subdir needed —
-  LocalAppData is a separate root from `%APPDATA%` (where config lives).
+  home that fits the working-state use case. The `data\` subdir is needed
+  because cache also resolves under LocalAppData.
 
 **Naming rule: data is per-binary** — same as cache (§4.1), not config.
 Derived program-managed state has program-specific lifecycle; jtk's run
@@ -561,8 +563,8 @@ genuinely common policy and easy to get subtly wrong per-CLI:
   (§4.1) — one place, not re-derived 6×;
 - the **data-dir derivation** (§5.2) — no Go stdlib helper exists, so the
   resolver computes the platform-specific path (`XDG_STATE_HOME` on Linux;
-  `%LOCALAPPDATA%` on Windows; Application Support + `data/` subdir on
-  macOS); one place, not re-derived per-CLI;
+  `%LOCALAPPDATA%` + `data\` subdir on Windows; Application Support +
+  `data/` subdir on macOS); one place, not re-derived per-CLI;
 - the **create vs. no-create split** (a resolver that mkdirs is wrong for
   dry-run / `config clear --all` paths — gro already learned this in B2b);
 - the **§3.1 hermetic test helper** (the full 8-var env set after the Data
@@ -901,7 +903,7 @@ convergence on §5. Disposition table at the end of this section.
       needs a SQLite run ledger + persisted artifacts that survive
       `config clear --all`.
 - [x] **Data location (§5.2): Path A — STATE-flavored backing.**
-      `XDG_STATE_HOME` (Linux) / `%LOCALAPPDATA%` (Windows) /
+      `XDG_STATE_HOME` (Linux) / `%LOCALAPPDATA%\<dir>\data` (Windows) /
       `~/Library/Application Support/<dir>/data/` (macOS). Explicitly
       **not** `XDG_DATA_HOME` on Linux (use case is working state, matches
       STATE's spec) and explicitly **not** `%APPDATA%` on Windows (avoids
@@ -1047,7 +1049,7 @@ HEAD. All accepted; corrections applied in this revision:
 
 | Finding | Disposition |
 |---------|-------------|
-| **B1** Data root conflates portable data, local state, logs, large artifacts — `%APPDATA%` may roam, `XDG_DATA_HOME` is backup-targeted | §1/§1.1/§5.1/§5.2 backing shifted to Path A — Linux `XDG_STATE_HOME`, Windows `%LOCALAPPDATA%`, macOS unchanged. §5.1 collapse note rewritten to honor OS-level collapse + pick spec-correct half where OS doesn't (STATE on Linux). |
+| **B1** Data root conflates portable data, local state, logs, large artifacts — `%APPDATA%` may roam, `XDG_DATA_HOME` is backup-targeted | §1/§1.1/§5.1/§5.2 backing shifted to Path A — Linux `XDG_STATE_HOME`, Windows `%LOCALAPPDATA%` plus a `data\` subdir, macOS Application Support plus a `data/` subdir. §5.1 collapse note rewritten to honor OS-level collapse + pick spec-correct half where OS doesn't (STATE on Linux). |
 | **M1** Shared-family data naming contradictory — "inherits config rule" then "deferred" | §5.2 rewrote naming rule → **per-binary** (matches cache §4.1, not config §3). Derived program-managed state has program-specific lifecycle, not credential-scope ownership. |
 | **M2** Retention too optional for a pillar that may persist logs / agent outputs | added §5.6 retention guidance — concrete shapes (size/age/count caps), enforcement-timing recommendations, generous-but-finite defaults. Framed as SHOULD per user direction (not MUST), with the explicit note that "we didn't think about retention" is the same failure mode as "we didn't think about TTL" was for cache. |
 | **M3** `working-with-secrets.md` §1.7.2 still framed `config clear --all` as broad factory reset | secrets §1.7.2 + §1.10 cross-doc updated — data pillar explicitly excluded; pointer to `working-with-state.md` §5. |
