@@ -12,13 +12,9 @@
 // OS-native dir on macOS/Windows — that is the standard. A relative $XDG_*
 // yields the stdlib error unchanged (the §1.1 intentional tightening).
 //
-// Data pillar (§5) status: NOT YET IMPLEMENTED in this package. The
-// resolver will gain a Data() method when the first data-holding CLI lands
-// (the §7 rollout step 7 commitment); it will derive XDG_STATE_HOME on
-// Linux, %LOCALAPPDATA% on Windows, and Application Support + data/ subdir
-// on macOS, per §5.2. Adoption is additive — no existing caller changes
-// behavior — so the §6 release-train guardrail does not require a
-// consumer-matrix repin at extraction time.
+// Resolution for data follows working-with-state.md §5.2: XDG_STATE_HOME on
+// Linux, %LOCALAPPDATA% on Windows, and Application Support + data/ on macOS.
+// Data is per-binary like cache, not shared by credential scope like config.
 package statedir
 
 import (
@@ -26,10 +22,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
-// dirPerm is the §3 directory permission for config and cache dirs.
+// dirPerm is the §3/§5 directory permission for config, cache, and data dirs.
 const dirPerm = 0o700
 
 // ErrInvalidName is returned when a scope or tool name is unusable as a single
@@ -128,6 +125,74 @@ func (c Cache) CacheDirEnsured() (string, error) {
 		return "", fmt.Errorf("statedir: creating cache dir: %w", err)
 	}
 	return dir, nil
+}
+
+// Data is the data-dir naming key (§5.2): always the binary/tool name, even
+// inside a shared-credential repo. Program-managed state has per-tool
+// lifecycle, so jtk and cfl data dirs are separate even when they share config.
+type Data struct {
+	Tool string
+}
+
+// DataDir resolves the data directory WITHOUT creating it.
+func (d Data) DataDir() (string, error) {
+	if err := validateComponent("tool name", d.Tool); err != nil {
+		return "", err
+	}
+	return dataDirFor(d.Tool, runtime.GOOS, os.Getenv, os.UserHomeDir)
+}
+
+// DataDirEnsured is DataDir plus os.MkdirAll(dir, 0700). Same no-re-chmod rule
+// as ConfigDirEnsured.
+func (d Data) DataDirEnsured() (string, error) {
+	dir, err := d.DataDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		return "", fmt.Errorf("statedir: creating data dir: %w", err)
+	}
+	return dir, nil
+}
+
+func dataDirFor(tool, goos string, getenv func(string) string, userHomeDir func() (string, error)) (string, error) {
+	switch goos {
+	case "linux":
+		if stateHome := getenv("XDG_STATE_HOME"); stateHome != "" {
+			if !filepath.IsAbs(stateHome) {
+				return "", fmt.Errorf("statedir: resolving user data dir: XDG_STATE_HOME %q is relative", stateHome)
+			}
+			return filepath.Join(stateHome, tool), nil
+		}
+		home, err := userHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("statedir: resolving user data dir: %w", err)
+		}
+		if home == "" {
+			return "", errors.New("statedir: resolving user data dir: home directory is empty")
+		}
+		return filepath.Join(home, ".local", "state", tool), nil
+	case "darwin":
+		home, err := userHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("statedir: resolving user data dir: %w", err)
+		}
+		if home == "" {
+			return "", errors.New("statedir: resolving user data dir: home directory is empty")
+		}
+		return filepath.Join(home, "Library", "Application Support", tool, "data"), nil
+	case "windows":
+		localAppData := getenv("LocalAppData")
+		if localAppData == "" {
+			localAppData = getenv("LOCALAPPDATA")
+		}
+		if localAppData == "" {
+			return "", errors.New("statedir: resolving user data dir: LocalAppData is empty")
+		}
+		return filepath.Join(localAppData, tool), nil
+	default:
+		return "", fmt.Errorf("statedir: resolving user data dir: unsupported GOOS %q", goos)
+	}
 }
 
 // LegacySource is the migration-source enumeration seam (§6a). The resolver

@@ -73,6 +73,43 @@ func TestCacheDirEnsured_Creates0700(t *testing.T) {
 	}
 }
 
+func TestDataDir_NoCreate(t *testing.T) {
+	statedirtest.Hermetic(t)
+
+	got, err := statedir.Data{Tool: "cr"}.DataDir()
+	if err != nil {
+		t.Fatalf("DataDir: %v", err)
+	}
+	want := currentPlatformDataDir(t, "cr")
+	if got != want {
+		t.Fatalf("DataDir = %q, want %q", got, want)
+	}
+	if _, err := os.Stat(got); !os.IsNotExist(err) {
+		t.Fatalf("DataDir must not create the directory; stat err = %v", err)
+	}
+}
+
+func TestDataDirEnsured_Creates0700(t *testing.T) {
+	statedirtest.Hermetic(t)
+
+	dir, err := statedir.Data{Tool: "cr"}.DataDirEnsured()
+	if err != nil {
+		t.Fatalf("DataDirEnsured: %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat created dir: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q is not a directory", dir)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o700 {
+			t.Fatalf("created data dir mode = %o, want 0700", perm)
+		}
+	}
+}
+
 func TestCacheDir_PerBinary(t *testing.T) {
 	statedirtest.Hermetic(t)
 
@@ -99,6 +136,64 @@ func TestCacheDir_PerBinary(t *testing.T) {
 	}
 }
 
+func TestDataDir_PerBinary(t *testing.T) {
+	statedirtest.Hermetic(t)
+
+	jtk, err := statedir.Data{Tool: "jtk"}.DataDir()
+	if err != nil {
+		t.Fatalf("jtk DataDir: %v", err)
+	}
+	cfl, err := statedir.Data{Tool: "cfl"}.DataDir()
+	if err != nil {
+		t.Fatalf("cfl DataDir: %v", err)
+	}
+	if jtk == cfl {
+		t.Fatalf("per-binary data dirs must differ: both = %q", jtk)
+	}
+	if want := currentPlatformDataDir(t, "jtk"); jtk != want {
+		t.Fatalf("jtk DataDir = %q, want %q", jtk, want)
+	}
+	if _, err := os.Stat(jtk); !os.IsNotExist(err) {
+		t.Fatalf("DataDir must not create the directory; stat err = %v", err)
+	}
+}
+
+func TestHermeticPillarsDoNotCollide(t *testing.T) {
+	statedirtest.Hermetic(t)
+
+	configDir, err := statedir.Scope{Name: "codereview"}.ConfigDir()
+	if err != nil {
+		t.Fatalf("ConfigDir: %v", err)
+	}
+	cacheDir, err := statedir.Cache{Tool: "codereview"}.CacheDir()
+	if err != nil {
+		t.Fatalf("CacheDir: %v", err)
+	}
+	dataDir, err := statedir.Data{Tool: "codereview"}.DataDir()
+	if err != nil {
+		t.Fatalf("DataDir: %v", err)
+	}
+
+	dirs := map[string]string{
+		"config": configDir,
+		"cache":  cacheDir,
+		"data":   dataDir,
+	}
+	for aName, aDir := range dirs {
+		for bName, bDir := range dirs {
+			if aName >= bName {
+				continue
+			}
+			if aDir == bDir {
+				t.Fatalf("%s and %s dirs collide at %q", aName, bName, aDir)
+			}
+		}
+		if _, err := os.Stat(aDir); !os.IsNotExist(err) {
+			t.Fatalf("%s dir resolution must not create %q; stat err = %v", aName, aDir, err)
+		}
+	}
+}
+
 func TestInvalidNames(t *testing.T) {
 	statedirtest.Hermetic(t)
 
@@ -111,6 +206,40 @@ func TestInvalidNames(t *testing.T) {
 			if _, err := (statedir.Cache{Tool: name}).CacheDir(); !errors.Is(err, statedir.ErrInvalidName) {
 				t.Fatalf("Cache{%q}.CacheDir() err = %v, want ErrInvalidName", name, err)
 			}
+			if _, err := (statedir.Data{Tool: name}).DataDir(); !errors.Is(err, statedir.ErrInvalidName) {
+				t.Fatalf("Data{%q}.DataDir() err = %v, want ErrInvalidName", name, err)
+			}
 		})
+	}
+}
+
+func currentPlatformDataDir(t *testing.T, tool string) string {
+	t.Helper()
+	switch runtime.GOOS {
+	case "linux":
+		stateHome := os.Getenv("XDG_STATE_HOME")
+		if stateHome == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				t.Fatalf("os.UserHomeDir: %v", err)
+			}
+			stateHome = filepath.Join(home, ".local", "state")
+		}
+		return filepath.Join(stateHome, tool)
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatalf("os.UserHomeDir: %v", err)
+		}
+		return filepath.Join(home, "Library", "Application Support", tool, "data")
+	case "windows":
+		localAppData := os.Getenv("LocalAppData")
+		if localAppData == "" {
+			localAppData = os.Getenv("LOCALAPPDATA")
+		}
+		return filepath.Join(localAppData, tool)
+	default:
+		t.Fatalf("unsupported GOOS %q", runtime.GOOS)
+		return ""
 	}
 }
