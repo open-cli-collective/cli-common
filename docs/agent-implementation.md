@@ -10,7 +10,8 @@ This is **normative for new CLI work** and the target state for existing CLI
 repos. It complements the harness-engineering principles described by OpenAI:
 thin entrypoints, repository knowledge as the system of record, mechanical
 enforcement for invariants, and feedback loops from review into the repo
-itself: https://openai.com/index/harness-engineering/
+itself. The URL is context only; the normative policy is the local standard
+below: https://openai.com/index/harness-engineering/
 
 ## Authority boundary
 
