@@ -3,6 +3,7 @@ package statedir_test
 import (
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -293,6 +294,8 @@ func TestInvalidNames(t *testing.T) {
 
 func currentPlatformDataDir(t *testing.T, tool string) string {
 	t.Helper()
+	// This external test helper mirrors dataDirFor's platform policy; update it
+	// whenever the resolver's platform-specific data roots change.
 	switch runtime.GOOS {
 	case "linux":
 		stateHome := os.Getenv("XDG_STATE_HOME")
@@ -301,7 +304,12 @@ func currentPlatformDataDir(t *testing.T, tool string) string {
 			if err != nil {
 				t.Fatalf("os.UserHomeDir: %v", err)
 			}
+			if home == "" {
+				t.Fatalf("os.UserHomeDir returned empty home")
+			}
 			stateHome = filepath.Join(home, ".local", "state")
+		} else if !path.IsAbs(stateHome) {
+			t.Fatalf("XDG_STATE_HOME %q is relative", stateHome)
 		}
 		return filepath.Join(stateHome, tool)
 	case "darwin":
@@ -309,11 +317,17 @@ func currentPlatformDataDir(t *testing.T, tool string) string {
 		if err != nil {
 			t.Fatalf("os.UserHomeDir: %v", err)
 		}
+		if home == "" {
+			t.Fatalf("os.UserHomeDir returned empty home")
+		}
 		return filepath.Join(home, "Library", "Application Support", tool, "data")
 	case "windows":
 		localAppData := os.Getenv("LocalAppData")
 		if localAppData == "" {
 			localAppData = os.Getenv("LOCALAPPDATA")
+		}
+		if localAppData == "" {
+			t.Fatalf("LocalAppData is empty")
 		}
 		return filepath.Join(localAppData, tool, "data")
 	default:
