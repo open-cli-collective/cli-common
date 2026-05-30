@@ -1,11 +1,20 @@
 # cli-common standards
 
-Nine normative documents define how every Open CLI Collective CLI is built and behaves, split across two axes. New CLIs implement to these.
+Ten normative documents define the Open CLI Collective standards family. Nine
+define how every CLI is built and behaves, split across two axes; one defines
+how agents apply and maintain those standards.
 
 - **Behavior axis** — what the running binary does: secrets, state, command surface, output, scriptability. Five docs.
 - **Repo axis** — how the project is structured, built, released, and shipped: repo layout, CI, release, distribution. Four docs.
+- **Agent operating policy** — how agents discover source-of-truth guidance,
+  keep entrypoint files as indexes, and promote repeated failures into durable
+  docs or checks. One doc.
 
 The two axes are largely orthogonal: the behavior axis governs the *program*, the repo axis governs the *project*. When an item touches both, the behavior axis wins on binary behavior and the repo axis wins on project mechanics.
+
+The agent operating policy is not a third runtime/project precedence axis. It
+governs how agents consume and maintain the standards; the behavior and repo
+axes still own the surfaces they define.
 
 ## Referencing these standards
 
@@ -67,6 +76,12 @@ When two docs appear to conflict, the one higher on its axis wins **on the surfa
 | [`ci.md`](ci.md) | The pre-merge gate — `ci.yml` triggers, the separate build/test/lint/pr-title jobs, the CGO split-build matrix, lint and coverage, consuming the shared CI composite actions (not a reusable workflow — keeps bare check names). |
 | [`release.md`](release.md) | Cutting a release — conventional commits, `version.txt` (`MAJOR.MINOR`) + run-number patch, the dual-gate auto-release, the dedicated tag-token re-trigger handoff (split from the tap token), release recovery/idempotency, the monorepo per-tool variant. |
 | [`distribution.md`](distribution.md) | Shipping the binary — the goreleaser build matrix, the CGO-darwin verification gate, artifact identity, Homebrew cask, winget, chocolatey, apt/`.deb` + rpm via `linux-packages`. Snap is being decommissioned. |
+
+### Agent operating policy — how agents use the standards
+
+| Doc | Use this when… |
+|---|---|
+| [`agent-implementation.md`](agent-implementation.md) | Creating or reviewing agent-facing guidance, implementing a new CLI with an agent, changing an existing CLI without copying shared policy locally, or deciding when a repeated agent failure belongs in docs, tests, lint, CI, Make targets, or shared helpers. |
 
 Tool-specific specs (jtk's `internal/cmd/GUARDRAILS.md` and `internal/cmd/OUTPUT_SPEC.md`) instantiate the family-wide layer above and add per-tool decisions on top.
 
