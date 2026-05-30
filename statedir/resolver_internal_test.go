@@ -90,11 +90,25 @@ func TestDataDirForFailurePaths(t *testing.T) {
 			wantErr: "home unavailable",
 		},
 		{
+			name:    "linux empty home",
+			goos:    "linux",
+			env:     map[string]string{},
+			home:    "",
+			wantErr: "home directory is empty",
+		},
+		{
 			name:    "darwin home error",
 			goos:    "darwin",
 			env:     map[string]string{},
 			homeErr: homeErr,
 			wantErr: "home unavailable",
+		},
+		{
+			name:    "darwin empty home",
+			goos:    "darwin",
+			env:     map[string]string{},
+			home:    "",
+			wantErr: "home directory is empty",
 		},
 		{
 			name:    "windows missing local app data",

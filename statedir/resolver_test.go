@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/open-cli-collective/cli-common/statedir"
@@ -34,9 +35,17 @@ func TestScopeConfigDir_NoCreate(t *testing.T) {
 func TestScopeConfigDirEnsured_Creates0700(t *testing.T) {
 	statedirtest.Hermetic(t)
 
-	dir, err := statedir.Scope{Name: "slck"}.ConfigDirEnsured()
+	scope := statedir.Scope{Name: "slck"}
+	want, err := scope.ConfigDir()
+	if err != nil {
+		t.Fatalf("ConfigDir: %v", err)
+	}
+	dir, err := scope.ConfigDirEnsured()
 	if err != nil {
 		t.Fatalf("ConfigDirEnsured: %v", err)
+	}
+	if dir != want {
+		t.Fatalf("ConfigDirEnsured = %q, want resolved ConfigDir %q", dir, want)
 	}
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -55,9 +64,17 @@ func TestScopeConfigDirEnsured_Creates0700(t *testing.T) {
 func TestCacheDirEnsured_Creates0700(t *testing.T) {
 	statedirtest.Hermetic(t)
 
-	dir, err := statedir.Cache{Tool: "nrq"}.CacheDirEnsured()
+	cache := statedir.Cache{Tool: "nrq"}
+	want, err := cache.CacheDir()
+	if err != nil {
+		t.Fatalf("CacheDir: %v", err)
+	}
+	dir, err := cache.CacheDirEnsured()
 	if err != nil {
 		t.Fatalf("CacheDirEnsured: %v", err)
+	}
+	if dir != want {
+		t.Fatalf("CacheDirEnsured = %q, want resolved CacheDir %q", dir, want)
 	}
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -92,9 +109,17 @@ func TestDataDir_NoCreate(t *testing.T) {
 func TestDataDirEnsured_Creates0700(t *testing.T) {
 	statedirtest.Hermetic(t)
 
-	dir, err := statedir.Data{Tool: "cr"}.DataDirEnsured()
+	data := statedir.Data{Tool: "cr"}
+	want, err := data.DataDir()
+	if err != nil {
+		t.Fatalf("DataDir: %v", err)
+	}
+	dir, err := data.DataDirEnsured()
 	if err != nil {
 		t.Fatalf("DataDirEnsured: %v", err)
+	}
+	if dir != want {
+		t.Fatalf("DataDirEnsured = %q, want resolved DataDir %q", dir, want)
 	}
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -191,6 +216,59 @@ func TestHermeticPillarsDoNotCollide(t *testing.T) {
 		if _, err := os.Stat(aDir); !os.IsNotExist(err) {
 			t.Fatalf("%s dir resolution must not create %q; stat err = %v", aName, aDir, err)
 		}
+	}
+}
+
+func TestEnsuredDirsPropagateMkdirFailure(t *testing.T) {
+	tests := []struct {
+		name    string
+		resolve func() (string, error)
+		ensure  func() (string, error)
+		wantErr string
+	}{
+		{
+			name:    "config",
+			resolve: statedir.Scope{Name: "blocked-config"}.ConfigDir,
+			ensure:  statedir.Scope{Name: "blocked-config"}.ConfigDirEnsured,
+			wantErr: "creating config dir",
+		},
+		{
+			name:    "cache",
+			resolve: statedir.Cache{Tool: "blocked-cache"}.CacheDir,
+			ensure:  statedir.Cache{Tool: "blocked-cache"}.CacheDirEnsured,
+			wantErr: "creating cache dir",
+		},
+		{
+			name:    "data",
+			resolve: statedir.Data{Tool: "blocked-data"}.DataDir,
+			ensure:  statedir.Data{Tool: "blocked-data"}.DataDirEnsured,
+			wantErr: "creating data dir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			statedirtest.Hermetic(t)
+
+			dir, err := tt.resolve()
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+				t.Fatalf("create parent: %v", err)
+			}
+			if err := os.WriteFile(dir, []byte("not a directory"), 0o600); err != nil {
+				t.Fatalf("create blocking file: %v", err)
+			}
+
+			got, err := tt.ensure()
+			if err == nil {
+				t.Fatalf("ensure returned nil error and path %q, want %q error", got, tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("ensure error = %q, want substring %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
