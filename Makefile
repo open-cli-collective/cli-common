@@ -11,7 +11,7 @@ tidy:
 		{ echo "go.mod/go.sum not tidy:"; git status --porcelain -- go.mod go.sum; git diff -- go.mod go.sum; exit 1; }
 
 lint:
-	golangci-lint run
+	golangci-lint run ./...
 
 test:
 	go test -race ./...

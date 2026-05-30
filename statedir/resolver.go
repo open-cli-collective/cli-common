@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -159,7 +160,7 @@ func dataDirFor(tool, goos string, getenv func(string) string, userHomeDir func(
 	switch goos {
 	case "linux":
 		if stateHome := getenv("XDG_STATE_HOME"); stateHome != "" {
-			if !filepath.IsAbs(stateHome) {
+			if !path.IsAbs(stateHome) {
 				return "", fmt.Errorf("statedir: resolving user data dir: XDG_STATE_HOME %q is relative", stateHome)
 			}
 			return filepath.Join(stateHome, tool), nil
