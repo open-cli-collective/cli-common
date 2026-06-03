@@ -120,7 +120,9 @@ A CLI that skips macOS-CGO can ship a darwin binary with no Keychain support; a
 CLI that skips Windows can ship a binary that doesn't compile — and not notice
 until a user's release breaks. The release-time Mach-O verification gate
 (`distribution.md` §2) is the second line of defense for darwin; CI is the
-first, and the *only* one for Windows. **Today only `cli-common` runs Windows in
+first, and the *only* one for Windows. (That same release-time darwin path also
+code-signs each binary with a stable identity and gates on the designated
+requirement — `distribution.md` §2A.) **Today only `cli-common` runs Windows in
 CI** — every shipping CLI builds Windows solely at release via goreleaser, so a
 Windows-only break is invisible pre-release (§8).
 

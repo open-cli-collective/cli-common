@@ -138,9 +138,10 @@ and reserve `TAP_GITHUB_TOKEN` for Homebrew tap pushes (§7).
 
 `.github/workflows/release.yml` triggers on tag push matching `v*`. It runs
 goreleaser to build and publish. **The build matrix, the CGO-darwin
-verification gate, and every publish channel are owned by `distribution.md`** —
-`release.md`'s responsibility is only that a correctly-formed tag exists and
-`release.yml` fires on it.
+verification gate, the macOS code-signing identity + `check-signature` gate
+(`distribution.md` §2A), and every publish channel are owned by
+`distribution.md`** — `release.md`'s responsibility is only that a
+correctly-formed tag exists and `release.yml` fires on it.
 
 ### §4.1 Release recovery and idempotency
 
