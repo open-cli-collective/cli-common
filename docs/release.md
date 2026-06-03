@@ -127,10 +127,10 @@ common thing to get wrong standing up a new repo — never "simplify" it back to
    `contents: write`. Preferred: no long-lived credential, no human owner.
 2. A dedicated, narrowly-scoped PAT named **`RELEASE_TAG_TOKEN`** (tag/contents
    push only) — kept **separate** from the Homebrew-tap push token
-   (`HOMEBREW_TAP_TOKEN`, `distribution.md` §6).
+   (`TAP_GITHUB_TOKEN`, `distribution.md` §6).
 
-Current repos overload a single `TAP_GITHUB_TOKEN` for both the tag re-trigger
-and the tap push (§7); new CLIs MUST NOT conflate the two.
+Repos must use `RELEASE_TAG_TOKEN` or a GitHub App token for the tag re-trigger,
+and reserve `TAP_GITHUB_TOKEN` for Homebrew tap pushes (§7).
 
 ---
 
@@ -251,9 +251,10 @@ the `RELEASE_TAG_TOKEN` PAT secret above.
   `feat:`/`fix:` prefix; confirm it (and the new `pr-title` check) accept scoped
   and bang forms per §1.1 when authoring the reusable workflow, or scoped/bang
   titles will silently skip releases.
-- **Overloaded release token**: all current repos use one `TAP_GITHUB_TOKEN` for
-  both the tag re-trigger and the Homebrew-tap push; the standard splits these
-  (`RELEASE_TAG_TOKEN` + `HOMEBREW_TAP_TOKEN`, or a GitHub App token) (§3.1).
+- **Overloaded release token**: repos that still use `TAP_GITHUB_TOKEN` for both
+  the tag re-trigger and the Homebrew-tap push must split those paths:
+  `RELEASE_TAG_TOKEN` or a GitHub App token for tag pushes, and
+  `TAP_GITHUB_TOKEN` for Homebrew tap pushes (§3.1).
 - **`codereview-cli` has no release machinery at all** (only `ci.yml`) — no
   `auto-release.yml`, no `release.yml`. It is the obvious first beneficiary of
   the reusable workflows.
