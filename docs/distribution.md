@@ -74,6 +74,72 @@ using credstore's Keychain backend MUST gate the release on both.
 
 ---
 
+## §2A macOS code-signing identity
+
+macOS Keychain "Always Allow" grants do **not** trust a file — they store a
+**designated requirement (DR)** in the Keychain item's ACL and re-check the calling
+binary against it on every access. An **ad-hoc-signed** binary (Go's linker
+ad-hoc-signs arm64; Homebrew ad-hoc-signs on install) has the DR `cdhash H"…"` — the
+literal content hash — so every `brew upgrade` produces a new hash, the DR no longer
+matches, and the user is re-prompted. Any CLI whose `keychain_probe` (§8) selects the
+macOS Keychain backend has this problem.
+
+**Standard: sign every darwin binary at release time with the family's single
+self-signed code-signing cert and a constant per-tool identifier.** That makes the DR
+`identifier "org.open-cli-collective.<binary>" and certificate leaf = H"<cert hash>"`
+— no `cdhash` — so the grant survives rebuilds **as long as the cert and identifier
+never change.** No Apple Developer account, no notarization: Homebrew binaries aren't
+quarantined and we establish a local identity, not Gatekeeper trust — so `codesign`
+MUST omit `--timestamp` and `--options runtime`.
+
+**Invariants (unforgiving):**
+
+- The signing **cert is generated once and reused forever.** Never generate a cert in
+  CI — a fresh cert changes the leaf hash and re-breaks every existing grant.
+- **Cert validity is long but finite.** The DR pins the leaf *hash*, not expiry, so an
+  expired cert does **not** break existing grants — but `codesign` refuses to sign new
+  builds with an expired cert. Replacing the cert is its only expiry remedy, and that
+  new leaf hash re-breaks every grant (one re-prompt per user), so pick a long life up
+  front and don't let it lapse mid-life (current cert expires 2036).
+- The **identifier is `org.open-cli-collective.<binary>`, constant per tool across all
+  versions.** Changing it changes the DR.
+
+**Where the logic lives (centralized — a repo adds one line).** Signing MUST run inside
+goreleaser's build lifecycle, in the per-build `hooks.post` (after each binary is
+linked, **before** it is archived/checksummed — signing the loose `dist/` binary
+afterward would leave the shipped tarball unsigned). The script, cert import, identifier
+derivation, and DR verification are centralized in `open-cli-collective/.github`:
+`actions/macos-codesign-setup` writes the canonical `codesign-darwin.sh` and exports
+`CODESIGN_DARWIN_SCRIPT`; `actions/darwin-gate check-signature` enforces the DR. Each
+darwin build adds exactly one byte-identical hook:
+
+```yaml
+    hooks:
+      post:
+        - cmd: bash -c 'f="${CODESIGN_DARWIN_SCRIPT:-}"; [ -n "$f" ] && [ -x "$f" ] && exec "$f" "$0" "$1"; echo "skip codesign (no CODESIGN_DARWIN_SCRIPT)"' "{{ .Path }}" "{{ .Os }}"
+```
+
+The hook uses the **absolute** `$CODESIGN_DARWIN_SCRIPT` (a build hook's CWD is the
+build's `dir:`, e.g. `tools/cfl`, so a repo-relative path would miss) and no-ops in
+local builds where the env is unset. Signing setup and `check-signature` enforcement
+are both **self-gated on whether the cert secrets were passed** (`secrets.*` is not
+available in `if:`, so the gate lives inside the composites, keyed on their inputs):
+both off for a caller that hasn't opted in, both on the moment it passes the four
+secrets — which keeps a rolling `@v1` bump from breaking untouched callers.
+
+**Verification (the acceptance criterion).** `check-signature` parses **only** the
+`designated => …` requirement line of `codesign -d -r-` and fails the release unless it
+pins `certificate leaf = H"<MACOS_CERT_LEAF_SHA>"` and `identifier
+"org.open-cli-collective.<binary>"` with **no** `cdhash`. Never grep the whole verbose
+dump — a valid signature still prints `CDHash=` metadata, which is *not* the
+requirement-language `cdhash`.
+
+**Expect one final re-prompt per machine per tool** the first time a stable-signed build
+replaces the old ad-hoc one (the Keychain item still holds the old ad-hoc DR); the user
+grants once more and it then sticks. Note this in the release notes.
+
+---
+
 ## §3 macOS — Homebrew cask
 
 - Published to the shared tap **`open-cli-collective/homebrew-tap`** as
@@ -81,8 +147,9 @@ using credstore's Keychain backend MUST gate the release on both.
   new CLIs set it to the binary short name, e.g. `slck` — grandfathered tools may
   differ).
 - A **cask, not a formula** — we ship a prebuilt binary, not a source build. The
-  cask also handles Gatekeeper quarantine removal for the unsigned binary. The
-  tap's `Formula/` directory is **deprecated** (cask-only since 2026-01-16); new
+  cask also removes any quarantine metadata for the non-notarized binary (signed
+  per §2A, but not notarized). The tap's `Formula/` directory is **deprecated**
+  (cask-only since 2026-01-16); new
   CLIs MUST NOT add a formula, and the surviving `Formula/*.rb` are legacy
   remnants (§10).
 - **Standard: goreleaser `homebrew_casks`.** goreleaser owns the canonical cask
@@ -194,11 +261,23 @@ listed in its README.
 | `CHOCOLATEY_API_KEY` | chocolatey publish (§4.2) |
 | `WINGET_GITHUB_TOKEN` | winget-pkgs submission (§4.1) |
 | `LINUX_PACKAGES_DISPATCH_TOKEN` | the §5.2 `repository_dispatch` |
+| `MACOS_CERT_P12` | base64 of the code-signing cert+key `.p12` (§2A) |
+| `MACOS_CERT_PASSWORD` | the `.p12` export password (§2A) |
+| `MACOS_CERT_CN` | the cert Common Name = the `codesign --sign` identity (§2A) |
+| `MACOS_CERT_LEAF_SHA` | the leaf SHA-1 the DR must pin, asserted by `check-signature` (§2A) |
 
 The GPG signing keys (`LINUX_PACKAGES_GPG_*`) live in the `linux-packages` repo,
 not in the CLI repos. `TAP_GITHUB_TOKEN` is intentionally scoped to Homebrew tap
 publishing; auto-release tag pushes use `RELEASE_TAG_TOKEN` or a GitHub App
 token and MUST NOT reuse the tap credential.
+
+The four `MACOS_CERT_*` secrets (§2A) are **org-level** — one self-signed cert shared
+by every keychain-backed tool. Each caller forwards them to the reusable workflow with
+an **explicit four-line `secrets:` pass-through** (`macos-cert-p12|password|cn|leaf-sha`),
+**never** `secrets: inherit`: the existing `secrets:` blocks remap names (e.g.
+`TAP_GITHUB_TOKEN`→`homebrew-tap-token`), and `inherit` can't remap, so it would blank
+those inputs and break the release. `_CN`/`_LEAF_SHA` aren't truly secret (both are
+embedded in every signed binary) but are kept as secrets for uniform pass-through wiring.
 
 ---
 
