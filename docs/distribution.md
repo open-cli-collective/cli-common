@@ -96,6 +96,11 @@ MUST omit `--timestamp` and `--options runtime`.
 
 - The signing **cert is generated once and reused forever.** Never generate a cert in
   CI — a fresh cert changes the leaf hash and re-breaks every existing grant.
+- **Cert validity is long but finite.** The DR pins the leaf *hash*, not expiry, so an
+  expired cert does **not** break existing grants — but `codesign` refuses to sign new
+  builds with an expired cert. Replacing the cert is its only expiry remedy, and that
+  new leaf hash re-breaks every grant (one re-prompt per user), so pick a long life up
+  front and don't let it lapse mid-life (current cert expires 2036).
 - The **identifier is `org.open-cli-collective.<binary>`, constant per tool across all
   versions.** Changing it changes the DR.
 
@@ -142,9 +147,9 @@ grants once more and it then sticks. Note this in the release notes.
   new CLIs set it to the binary short name, e.g. `slck` — grandfathered tools may
   differ).
 - A **cask, not a formula** — we ship a prebuilt binary, not a source build. The
-  cask also handles Gatekeeper quarantine removal for the non-notarized binary (signed per §2A, but not
-notarized — Gatekeeper still quarantines downloads). The
-  tap's `Formula/` directory is **deprecated** (cask-only since 2026-01-16); new
+  cask also handles Gatekeeper quarantine removal for the non-notarized binary
+  (signed per §2A, but not notarized — Gatekeeper still quarantines downloads).
+  The tap's `Formula/` directory is **deprecated** (cask-only since 2026-01-16); new
   CLIs MUST NOT add a formula, and the surviving `Formula/*.rb` are legacy
   remnants (§10).
 - **Standard: goreleaser `homebrew_casks`.** goreleaser owns the canonical cask
