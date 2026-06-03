@@ -147,9 +147,9 @@ grants once more and it then sticks. Note this in the release notes.
   new CLIs set it to the binary short name, e.g. `slck` — grandfathered tools may
   differ).
 - A **cask, not a formula** — we ship a prebuilt binary, not a source build. The
-  cask also handles Gatekeeper quarantine removal for the non-notarized binary
-  (signed per §2A, but not notarized — Gatekeeper still quarantines downloads).
-  The tap's `Formula/` directory is **deprecated** (cask-only since 2026-01-16); new
+  cask also removes any quarantine metadata for the non-notarized binary (signed
+  per §2A, but not notarized). The tap's `Formula/` directory is **deprecated**
+  (cask-only since 2026-01-16); new
   CLIs MUST NOT add a formula, and the surviving `Formula/*.rb` are legacy
   remnants (§10).
 - **Standard: goreleaser `homebrew_casks`.** goreleaser owns the canonical cask
