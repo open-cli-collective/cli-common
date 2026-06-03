@@ -101,7 +101,7 @@ using credstore's Keychain backend MUST gate the release on both.
   on any push error — it MUST NOT set `continue-on-error: true` and MUST exit
   non-zero so the release job fails (a swallowed error here leaves the tap with
   no cask at all).
-- The push to the tap uses a dedicated **`HOMEBREW_TAP_TOKEN`** (§6).
+- The push to the tap uses the dedicated **`TAP_GITHUB_TOKEN`** (§6).
 - **Current split (divergences, §10):** `google-readonly`, `salesforce-cli`,
   `hubspot-cli`, and both atlassian tools already use goreleaser `homebrew_casks`;
   `slack-chat-api` and `newrelic-cli` hand-roll the cask via heredoc in
@@ -190,14 +190,15 @@ listed in its README.
 | Secret | Used for |
 |---|---|
 | `RELEASE_TAG_TOKEN` (or a GitHub App token) | the tag re-trigger (`release.md` §3.1) |
-| `HOMEBREW_TAP_TOKEN` | push the cask to `homebrew-tap` (§3) |
+| `TAP_GITHUB_TOKEN` | push the cask to `homebrew-tap` (§3) |
 | `CHOCOLATEY_API_KEY` | chocolatey publish (§4.2) |
 | `WINGET_GITHUB_TOKEN` | winget-pkgs submission (§4.1) |
 | `LINUX_PACKAGES_DISPATCH_TOKEN` | the §5.2 `repository_dispatch` |
 
 The GPG signing keys (`LINUX_PACKAGES_GPG_*`) live in the `linux-packages` repo,
-not in the CLI repos. **Current repos overload a single `TAP_GITHUB_TOKEN`** for
-both the tag re-trigger and the tap push; the standard splits them (§10).
+not in the CLI repos. `TAP_GITHUB_TOKEN` is intentionally scoped to Homebrew tap
+publishing; auto-release tag pushes use `RELEASE_TAG_TOKEN` or a GitHub App
+token and MUST NOT reuse the tap credential.
 
 ---
 
@@ -381,9 +382,10 @@ from the calling repo.
   post-step (§3); the heredocs and the nrq formula are removed on migration.
 - **`hubspot-cli`'s `linux-packages` dispatch lacks `continue-on-error: true`**
   (§5.2) — a dispatch failure would fail its release; add it on migration.
-- **Overloaded token**: current repos use one `TAP_GITHUB_TOKEN` for tag push +
-  tap push; the standard splits it (`RELEASE_TAG_TOKEN` + `HOMEBREW_TAP_TOKEN`,
-  or a GitHub App token) (§6, `release.md` §3.1).
+- **Overloaded token**: repos that still use `TAP_GITHUB_TOKEN` for tag pushes
+  must split that path: `RELEASE_TAG_TOKEN` or a GitHub App token for the
+  auto-release tag re-trigger, and `TAP_GITHUB_TOKEN` for Homebrew tap pushes
+  (§6, `release.md` §3.1).
 - **No reusable workflow yet** — `release.yml`, `chocolatey-publish.yml`,
   `winget-publish.yml`, and the per-channel test workflows are copy-pasted
   across repos (doubled per-tool in `atlassian-cli`).
