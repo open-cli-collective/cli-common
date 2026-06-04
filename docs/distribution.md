@@ -116,12 +116,14 @@ darwin build adds exactly one byte-identical hook:
 ```yaml
     hooks:
       post:
-        - cmd: bash -c 'f="${CODESIGN_DARWIN_SCRIPT:-}"; [ -n "$f" ] && [ -x "$f" ] && exec "$f" "$0" "$1"; echo "skip codesign (no CODESIGN_DARWIN_SCRIPT)"' "{{ .Path }}" "{{ .Os }}"
+        - cmd: bash -c 'f="${CODESIGN_DARWIN_SCRIPT:-}"; if [ -z "$f" ]; then echo "skip codesign (CODESIGN_DARWIN_SCRIPT unset, local build)"; exit 0; fi; [ -x "$f" ] || { echo "CODESIGN_DARWIN_SCRIPT not executable ($f)" >&2; exit 1; }; exec "$f" "$0" "$1"' "{{ .Path }}" "{{ .Os }}"
 ```
 
 The hook uses the **absolute** `$CODESIGN_DARWIN_SCRIPT` (a build hook's CWD is the
-build's `dir:`, e.g. `tools/cfl`, so a repo-relative path would miss) and no-ops in
-local builds where the env is unset. Signing setup and `check-signature` enforcement
+build's `dir:`, e.g. `tools/cfl`, so a repo-relative path would miss) and is
+**fail-loud**: env **unset** → skip (the local-build / opt-out path); env **set but the
+script is missing or non-executable** → error and fail the build, rather than silently
+shipping an unsigned binary in a release that intended to sign. Signing setup and `check-signature` enforcement
 are both **self-gated on whether the cert secrets were passed** (`secrets.*` is not
 available in `if:`, so the gate lives inside the composites, keyed on their inputs):
 both off for a caller that hasn't opted in, both on the moment it passes the four
