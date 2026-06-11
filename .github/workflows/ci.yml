@@ -39,6 +39,14 @@ jobs:
         run: go build -v ./...
       - name: Test
         run: go test -v -race -coverprofile=coverage.out ./...
+      # Standard consumer build configuration (working-with-secrets.md
+      # §1.10): credstore must stay green with the keyring opt-out tags
+      # the CLIs ship with. keyring_nofile / keyring_nopass are NOT in
+      # the set — credstore exposes those backends in cgo builds.
+      - name: Build and test with keyring opt-out tags
+        run: |
+          go build -tags keyring_no1password,keyring_nopassage ./...
+          go test -race -tags keyring_no1password,keyring_nopassage ./...
 
   lint:
     runs-on: ubuntu-latest

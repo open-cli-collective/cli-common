@@ -44,9 +44,10 @@ purely additive or rides the coordinated consumer release train in
 [`working-with-state.md`](working-with-state.md) §6 — no tag until every
 ported consumer is green against the candidate SHA.
 
-## Known dependency cost
+## Keyring opt-out tags
 
-`byteness/keyring` compiles its 1Password openers (and transitively wazero /
-jaeger) into every consumer — documented in
-[`working-with-secrets.md`](working-with-secrets.md) §1.10; remediation
-tracked in cli-common#57.
+`byteness/keyring` (≥ v1.11.0) supports per-backend opt-out build tags;
+consumer CLIs build with `-tags keyring_no1password,keyring_nopassage` as
+standard configuration, and CI here tests credstore under the same set —
+see [`working-with-secrets.md`](working-with-secrets.md) §1.10 for the
+contract and why `keyring_nofile` / `keyring_nopass` are excluded.
