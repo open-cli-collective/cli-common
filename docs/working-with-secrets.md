@@ -318,7 +318,13 @@ In automation, prefer `set-credential` per-secret over `init` for everything: it
 
 A note on what credstore exposes: as of #24, `credstore` recognizes six backend names — `keychain`, `wincred`, `secret-service`, `file`, `pass`, `memory`. `pass` is the only external secret manager exposed natively; it shells out to the `pass` CLI binary and has no Go SDK dependencies. KeePassXC users get native runtime resolution today through Secret Service (no separate backend needed). 1Password native backends are deliberately not exposed: ByteNess's `op` / `op-connect` / `op-desktop` openers all depend on the upstream `github.com/1password/onepassword-sdk-go` package, which is still pre-1.0 — exposing them here would put a beta SDK on the credential-access critical path. The "default path" above remains the recommendation for most users; `pass` is an opt-in alternative for users who specifically want runtime resolution and accept the per-backend availability/version coupling.
 
-**Known dependency cost (documented trade-off).** Not exposing the 1Password backends does not remove their code: `byteness/keyring` imports its op openers unconditionally, so the 1Password SDKs — and transitively a WASM runtime (`wazero` via `extism`) and the archived `jaeger-client-go` — compile into every credstore consumer. Measured 2026-06-11 against keyring v1.9.3 on a real consumer binary (`slck`): 63 packages in the import graph, ~10.6 MB of attributable symbols, no dead-code elimination (the openers are `init()`-registered). The accepted interim posture is this documented cost; the remediation — an upstream opt-out build tag in ByteNess/keyring — is committed in cli-common#57, and when it lands the consumer build flag becomes part of this standard's build configuration.
+**Standard build configuration: keyring opt-out tags.** Not exposing the 1Password backends does not by itself remove their code: `byteness/keyring` `init()`-registers its openers, so without intervention the 1Password SDKs — and transitively a WASM runtime (`wazero` via `extism`) and the archived `jaeger-client-go` — compile into every credstore consumer (measured 2026-06-11 against keyring v1.9.3 on `slck`: 63 packages, ~10.6 MB of attributable symbols). The remediation landed upstream in keyring v1.11.0 (ByteNess/keyring#93/#94, driven from cli-common#57): per-backend opt-out build tags. Every consumer CLI MUST build (Makefile, CI, and `.goreleaser` `flags:`) with:
+
+```
+-tags keyring_no1password,keyring_nopassage
+```
+
+These two are exactly the backends credstore does not expose. `keyring_nofile` and `keyring_nopass` MUST NOT be used: credstore's cgo builds delegate the `file` and `pass` backends to `byteness/keyring`, so those tags would break exposed functionality. cli-common's own CI builds and tests credstore under the standard tag set to keep the configuration green from the library side.
 
 ## §1.11 Compliance criteria
 
