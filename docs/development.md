@@ -38,10 +38,11 @@ OS keychain or home directories; that class of leak is exactly what
 ## Releases
 
 No auto-release, no `version.txt` (library profile, `repo-layout.md` §2.1).
-Semver tags are cut manually. Changes to an exported `credstore` / `statedir`
-/ `cache` symbol are either purely additive or ride the coordinated consumer
-release train in [`working-with-state.md`](working-with-state.md) §6 — no tag
-until every ported consumer is green against the candidate SHA.
+Semver tags are cut manually. Any exported API **or behavior** change in any
+exported package (`credstore`, `statedir`, `statedirtest`, `cache`) is either
+purely additive or rides the coordinated consumer release train in
+[`working-with-state.md`](working-with-state.md) §6 — no tag until every
+ported consumer is green against the candidate SHA.
 
 ## Known dependency cost
 
