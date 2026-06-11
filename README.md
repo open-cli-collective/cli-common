@@ -42,9 +42,9 @@ grammar (§1.3), the `Store`/`Open` lifecycle, single-key and bundle ops,
 OS-keyring backends (Keychain / Credential Manager / Secret Service / encrypted
 file) with Linux fail-closed classification (§1.4), `--backend` flag plumbing,
 redaction helpers, and legacy-migration helpers (§1.8). The `cache` package
-implements the tier-1 universal core from `working-with-state.md` §5b
+implements the tier-1 universal core from `working-with-state.md` §6b
 (envelope + atomic write + freshness `Classify`). The `statedir` package
-provides the shared path/dir resolver from `working-with-state.md` §5a.
+provides the shared path/dir resolver from `working-with-state.md` §6a.
 
 For component-by-component conformance status and the rollout matrix across
 consumer CLIs, see `docs/working-with-state.md` §6 and §7 and

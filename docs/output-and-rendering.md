@@ -71,6 +71,7 @@ Reference implementation of the projection registry pattern (the `--fields` mach
 - `--extended` adds columns; it does not replace default columns.
 - Sorted most-recent-first where time-ordered (sprints, releases, deploys, etc.).
 - **Separator collision:** the ` | ` triplet (space-pipe-space) is reserved. When a cell value contains it, the presentation layer MUST replace the embedded ` | ` with a single space (or a similar non-collision substitution) before emission. A naked `|` inside a value, surrounded by other characters, is fine — the triplet is the discriminator. Document the substitution choice per-CLI; do not silently mangle without telling the user.
+- **Newlines in cells:** a cell value containing a newline breaks the one-row-per-line grammar entirely. The presentation layer MUST replace embedded newlines and carriage returns in cell values with a single space before emission — same posture as the separator substitution above.
 
 ```
 KEY | STATUS | TYPE | PTS | ASSIGNEE | SUMMARY
@@ -184,7 +185,13 @@ Reference: jtk's `resolve.New(client).Board/Sprint/User` at `atlassian-cli/tools
 
 Production **resource output has no color.** New CLIs MUST NOT add color to list/get/search output.
 
-Color in **setup and diagnostic surfaces** — `init` wizards, `me`, `config test`, `config clear`, success/error glyphs on mutation confirmations — is acceptable and consistent with existing CLIs (jtk/cfl/sfdc/nrq use `fatih/color` decorators; gro uses `lipgloss`). Where any color is rendered, a `--no-color` flag MUST be supported and respected; `isatty` is NOT checked.
+Color in **setup and diagnostic surfaces** — `init` wizards, `me`, `config test`, `config clear`, success/error glyphs on mutation confirmations — is acceptable and consistent with existing CLIs (jtk/cfl/sfdc/nrq use `fatih/color` decorators; gro uses `lipgloss`). Where any color is rendered:
+
+- Color MUST auto-disable when the output stream is not a TTY. This is the default behavior of both recommended libraries — do NOT override it to force color onto pipes. ANSI codes must never land in a script or agent capture.
+- A `--no-color` flag MUST be supported and respected.
+- The `NO_COLOR` env var SHOULD be honored (both recommended libraries do).
+
+*(Amended 2026-06-11: an earlier revision said "`isatty` is NOT checked" — that contradicted the recommended libraries' default behavior and the agent-capture use case. isatty gating is now the standard.)*
 
 Color choice: prefer `fatih/color` (the family default; honors a `--no-color` toggle via a package-level var) or `lipgloss` (honors `NO_COLOR` env natively). Either is fine; pick one per CLI and stick with it.
 
@@ -232,7 +239,7 @@ The new docs are forward-looking. The following current divergences from this st
 
 - **Resource-read JSON is widespread.** slck, sfdc, nrq, cfl all expose JSON on resource reads via global `-o json`; gro exposes it via per-command `--json`. Only jtk holds the §2 line (reserves JSON for `automation export`). New CLIs MUST NOT add resource-read JSON.
 - **gro has no root `--no-color` flag** — `google-readonly/internal/cmd/root/root.go:107-109` registers a global `--verbose` and the credstore backend flag but no color flag. Its lipgloss styling at `google-readonly/internal/view/view.go:34` honors the `NO_COLOR` env natively, which papers over the gap for users who set the env, but the missing flag is a divergence from §8.
-- **No CLI gates color on `isatty`.** This is intentional and consistent with §8 — `--no-color` is the documented opt-out.
+- **isatty gating is expected via library defaults but unverified per CLI.** §8 (as amended 2026-06-11) requires color to auto-disable on non-TTY output; fatih/color and lipgloss do this by default, so conformance is expected unless a CLI overrides it — a per-CLI verification pass is tracked in cli-common#55.
 - **No CLI has output goldens.** Per §9.5 this is recommended-not-normative pending the cli-common helper.
 
 Command-surface divergences (init flag-skip failures, missing `set-credential`) are catalogued in `command-surface.md` §9. Scriptability divergences (missing `--non-interactive`, `me` not exiting non-zero) are catalogued in `scriptability.md` §9.
