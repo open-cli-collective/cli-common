@@ -53,7 +53,7 @@ CI runs **build / test / lint** as distinct jobs, plus a PR-only title check:
 | `test` | `make test` (or `make test-cover`) | push + PR |
 | `lint` | `golangci-lint` per `repo-layout.md` §5 | push + PR |
 | `identity-check` | assert `packaging/identity.yml` matches `.goreleaser`/winget/choco/nfpm/Homebrew (`distribution.md` §8.2) | push + PR |
-| `pr-title` | assert the PR title is a conventional commit (`release.md` §1) **and** that the PR title and body are free of AI-tooling mentions (`repo-layout.md` §7 blocklist) | **pull_request only** |
+| `pr-title` | assert the PR title is a conventional commit (`release.md` §1.1 grammar) **and** that the PR title and body are free of AI-tooling mentions (`repo-layout.md` §7 blocklist) | **pull_request only** |
 
 `build`/`test`/`lint` are separate because **branch protection requires them as
 independent status checks** (`repo-layout.md` §6). A single combined job exposes
