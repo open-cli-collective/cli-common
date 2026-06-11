@@ -479,8 +479,12 @@ should not repeat the pattern. `purge` vs. `prune` reads more clearly than
 
 **Sub-conventions:**
 
-- Nuclear prompts for confirmation by default; `--yes` (or `--force`) opts
-  out. Matches `terraform destroy`, `kubectl delete` precedent.
+- Nuclear prompts for confirmation by default; `--force` opts out
+  (long-only) — the family-wide safety-confirmation skip per
+  `command-surface.md` §3.1. `--yes`/`-y` are not used (amended
+  2026-06-11: the terraform/kubectl-style `--yes` was considered and
+  rejected — one skip spelling across the family beats matching
+  external precedent).
 - **Both nuclear and maintenance verbs support `--dry-run`.** Nuclear's
   dry-run reports the exact paths that would be scrubbed (data dir,
   database artifacts) without removing anything; maintenance's dry-run
@@ -698,11 +702,12 @@ act* — done together (not two horizontal sweeps).
 7. **Data pillar (§5) is additive / greenfield (2026-05-28).** No existing
    CLI holds data state, so the data pillar contributes zero port-units to
    the rollout above. Net-new CLIs (`cr` is the driver) adopt §5 from
-   inception alongside §3/§4/§6. The `cli-common` resolver gains a `Data()`
-   method when the first data-holding CLI lands; the §6 release-train
-   guardrail applies — the addition is additive (no existing caller
-   changes behavior), so no consumer-matrix repin is required at
-   extraction time.
+   inception alongside §3/§4/§6. **Resolver support DELIVERED 2026-05-30
+   (`a9a6987`):** the `statedir.Data` type with `DataDir()` /
+   `DataDirEnsured()` methods implements the §5.2 derivation, shipped ahead
+   of the first data-holding CLI. The addition was additive (no existing
+   caller changed behavior), so no consumer-matrix repin was required —
+   consistent with the §6 release-train guardrail.
 
 ### 7.6 INT-310 close-out retrospective (MON-5375, 2026-05-20)
 
@@ -899,7 +904,8 @@ convergence on §5. Disposition table at the end of this section.
       the program owns lifecycle, the user shouldn't poke at it directly.
       Defined negatively ("not config, not secret, not cache") with the
       cache/data tiebreaker "default to cache when on the fence." Resolves
-      the gap raised in `data-pillar-primer.md`. Driver: `cr` (codereview)
+      the gap raised in `data-pillar-primer.md` (since deleted — §5 is the
+      sole record). Driver: `cr` (codereview)
       needs a SQLite run ledger + persisted artifacts that survive
       `config clear --all`.
 - [x] **Data location (§5.2): Path A — STATE-flavored backing.**
@@ -937,7 +943,9 @@ convergence on §5. Disposition table at the end of this section.
       per-CLI.** Nuclear obeys the §7.6 cleanup-command recovery contract
       (must not require readable state). Suggested verb pair `purge`
       (nuclear) / `prune` (maintenance); severity encoded in the verb,
-      not a flag. Confirmation prompt + `--yes` opt-out for nuclear.
+      not a flag. Confirmation prompt + `--force` opt-out for nuclear
+      *(amended 2026-06-11: originally `--yes`; aligned to
+      `command-surface.md` §3.1's single safety-skip spelling)*.
       **Both nuclear and maintenance verbs support `--dry-run`** —
       nuclear's dry-run reports paths-that-would-be-scrubbed without
       removing. Resolved Codex Round 6 Minor m1 (nuclear is the
@@ -978,9 +986,10 @@ convergence on §5. Disposition table at the end of this section.
       the data-pillar env vars it pins.
 - [x] **Doc home unchanged:** `cli-common/docs/`, versioned + pinned
       with the code (the data pillar rides the existing infra).
-- [x] **`data-pillar-primer.md` retention:** kept for now as the
-      "how this decision was reached" companion. Revisit deletion when
-      `cr` lands its first data dir and §5 is stable.
+- [x] **`data-pillar-primer.md` retention:** originally kept as the
+      "how this decision was reached" companion; **deleted 2026-06-11**
+      now that §5 is converged and the primer's specifics were stale.
+      This decisions log is the surviving record.
 
 ### Codex pressure-test — disposition (session 019e3fe7, gpt-5.5 xhigh)
 
@@ -1076,8 +1085,8 @@ Round 6 apply. All accepted:
 | Data deletion semantics — §5 lead-in "removed only by an explicit user-invoked verb" contradicts §5.6's automatic-at-write retention | §5 lead-in rewritten as three explicit invariants: dir survives `config clear --all` / whole-dir nuke is explicit / individual records may be retention-pruned by the program |
 | `working-with-secrets.md` §1.7.2 heading + "machine never having seen the CLI" sticky framing | §1.7.2 renamed to "config + credentials + cache reset"; "machine never having seen the CLI" reframed as "compose `config clear --all` AND `<tool> data purge` for the historical full reset"; §1.10 row #5 already corrected in Round 6 |
 | 8-var propagation incomplete — §7 step 1 / §7.6 step 6 / §8 decision rows / `statedirtest.go:3` still said 7-var | All forward-looking text now reads "8-var" or "full env set"; the two §8 decision rows from 2026-05-19 preserve "7-var" as the historical decision with an explicit "(grew to 8 on 2026-05-28)" annotation; package doc updated |
-| `statedir/resolver.go` package doc overclaims data-dir support — no `Data()` API exists yet | Doc rewritten as future-tense: explicit "NOT YET IMPLEMENTED" status, points at §7 rollout step 7 as the implementation gate (when the first data-holding CLI lands). Also `LegacySource` doc-string §5a → §6a |
-| `data-pillar-primer.md` stale enough to mislead — references old XDG_DATA_HOME / %APPDATA% / --purge-data / 7-var helper | Superseded banner at top with bulleted deltas; primer body preserved as "how the decision was reached" companion (user direction to keep it in place) |
+| `statedir/resolver.go` package doc overclaims data-dir support — no `Data()` API exists yet | Doc rewritten as future-tense: explicit "NOT YET IMPLEMENTED" status, points at §7 rollout step 7 as the implementation gate (when the first data-holding CLI lands). Also `LegacySource` doc-string §5a → §6a. *(Since superseded: `statedir.Data` shipped 2026-05-30 in `a9a6987` and the package doc now describes the implemented behavior — see §7 step 7.)* |
+| `data-pillar-primer.md` stale enough to mislead — references old XDG_DATA_HOME / %APPDATA% / --purge-data / 7-var helper | Superseded banner at top with bulleted deltas; primer body preserved as "how the decision was reached" companion (user direction to keep it in place) *(since deleted 2026-06-11 — see the §8 retention decision row)* |
 
 Round 7 (re-reviewed, 2026-05-28): **`blockers=0 majors=0 minors=2` — CONVERGED after applying the two minors.**
 Codex re-read the working tree after the cleanup pass landed and found no

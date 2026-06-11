@@ -83,6 +83,32 @@ Monorepo (`atlassian-cli`): per-tool files live under `tools/<tool>/`
 `go.work`, `LICENSE`, and CI. Tool-local agent entrypoints and
 `docs/development.md` equivalents are allowed where they reduce navigation cost.
 
+### §2.1 Library repos (no shipped binary)
+
+A repo that ships no binary and publishes through no package channel —
+`cli-common` itself — follows this doc under a reduced profile:
+
+- **Required files:** `README.md`, `LICENSE`, `AGENTS.md`, `CLAUDE.md`,
+  `docs/development.md`, `.golangci.yml`, `Makefile`,
+  `.gitignore`/`.gitattributes`. Agent entrypoints are required in every repo
+  agents work in, library or not.
+- **Not required:** `version.txt`, `.goreleaser.*`, `packaging/identity.yml`,
+  `CHANGELOG.md` — distribution files exist only where something ships.
+- **Makefile:** the §4 library exemption applies, with `check` =
+  `tidy` + `lint` + `test` + `build` so a green local `check` still predicts a
+  green CI run.
+- **Release/tagging:** semver tags are cut **manually**. `release.md`'s
+  auto-release and run-number patch scheme do NOT apply — a library with
+  co-evolving consumers must gate its tags on the consumer matrix being green
+  against the candidate SHA, and automating the tag would defeat that gate.
+  (`working-with-state.md` §6 is the concrete instance of this rule for
+  cli-common's state components.)
+- **CI:** `ci.md` applies — build/test/lint across the three OSes,
+  `go-version-file: go.mod`, and `pr-title` on the same terms as every repo
+  (i.e., when the shared composite ships in the family rollout, `ci.md` §8).
+  `identity-check` is N/A (nothing ships). This profile creates no new
+  CI-restructuring obligation beyond `ci.md`'s existing rules.
+
 ---
 
 ## §3 Go version policy
@@ -122,10 +148,10 @@ green CI run.
 
 **Library/shared-module exemption.** The full target set above applies to
 **shipped-binary CLI repos**. A library or shared module that produces no binary
-and ships through no package channel — e.g. `cli-common` itself, whose `make
-check` is just `tidy` + `lint` + `test` — needs only `tidy`/`lint`/`test`/`build`
-and is exempt from `install`/`release`/`snapshot`/`test-cover`. Do not force
-distribution targets onto a repo that distributes nothing.
+and ships through no package channel — e.g. `cli-common` itself (§2.1) — needs
+only `tidy`/`lint`/`test`/`build`, with `check` running all four, and is exempt
+from `install`/`release`/`snapshot`/`test-cover`. Do not force distribution
+targets onto a repo that distributes nothing.
 
 ---
 
@@ -184,7 +210,10 @@ defaults (no config file) is non-conformant.
 - **Conventional commits** drive releases (`release.md` §1).
 - Commit messages MUST NOT mention AI tooling (Claude, Anthropic, ChatGPT,
   Copilot, etc.). Enforce with a `commit-msg` hook that greps a blocklist and
-  rejects on match. Reference implementation (track it as
+  rejects on match. The hook alone is insufficient under squash merge: the
+  landing commit is built from the **PR title and body**, which no local hook
+  ever sees — the CI `pr-title` check therefore greps both against the same
+  blocklist (`ci.md` §2). Reference implementation (track it as
   `scripts/hooks/commit-msg` and wire via `git config core.hooksPath scripts/hooks`):
 
   ```sh

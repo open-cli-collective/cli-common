@@ -84,6 +84,16 @@ tradeoff for never hand-bumping the patch. The build stamps the version via
 `-ldflags` from the tag; `version.txt` holds only `MAJOR.MINOR`, so there is no
 full-version constant in the repo to drift.
 
+**Run-number scope (sharp edge).** `GITHUB_RUN_NUMBER` is scoped to the
+workflow **file path**. Renaming, moving, or deleting-and-recreating
+`auto-release.yml` resets the count to 1, so the next tag can sort *below*
+already-published versions (`v3.1.150` → `v3.1.2`) — a downgrade package
+channels will refuse or mis-resolve. Never rename the auto-release workflow
+file; the reusable-workflow migration (§6) keeps the local caller at the same
+path for exactly this reason. If numbering ever does reset, bump `MAJOR.MINOR`
+in `version.txt` before the next release so every new tag sorts above the old
+line.
+
 To release a new `MAJOR.MINOR`, bump `version.txt`. **The path gate (§3) MUST
 include `version.txt`** so a deliberate `MAJOR.MINOR` bump ships on its own
 merge. Current repos exclude it (§7) — meaning today a `version.txt`-only PR
@@ -225,7 +235,9 @@ jobs:
 ```
 
 Inputs: `tag-prefix`, `version-file`, `release-paths`, `tool-paths`. Secret:
-`tag-token` (the §3.1 dedicated token). Pin the `@v1` ref.
+`tag-token` (the §3.1 dedicated token). Pin the `@v1` ref. Keep the caller at
+`.github/workflows/auto-release.yml` — run numbers are path-scoped (§2), and a
+renamed caller resets the patch sequence.
 
 **GitHub App alternative (§3.1 preferred).** A caller job that `uses:` a
 reusable workflow cannot also run `steps:`, so the App-token mint can't live in

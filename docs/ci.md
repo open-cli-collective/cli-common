@@ -53,7 +53,7 @@ CI runs **build / test / lint** as distinct jobs, plus a PR-only title check:
 | `test` | `make test` (or `make test-cover`) | push + PR |
 | `lint` | `golangci-lint` per `repo-layout.md` §5 | push + PR |
 | `identity-check` | assert `packaging/identity.yml` matches `.goreleaser`/winget/choco/nfpm/Homebrew (`distribution.md` §8.2) | push + PR |
-| `pr-title` | assert the PR title is a conventional commit (`release.md` §1) | **pull_request only** |
+| `pr-title` | assert the PR title is a conventional commit (`release.md` §1) **and** that the PR title and body are free of AI-tooling mentions (`repo-layout.md` §7 blocklist) | **pull_request only** |
 
 `build`/`test`/`lint` are separate because **branch protection requires them as
 independent status checks** (`repo-layout.md` §6). A single combined job exposes
@@ -65,6 +65,14 @@ no PR title to check on a `push`). Because it gates release eligibility,
 `pr-title` MUST be a **required** PR status check (`repo-layout.md` §6) — left
 optional, the gate is advisory and a non-conventional title can merge and either
 mis-trigger or silently skip a release.
+
+For the same squash-merge reason, `pr-title` also greps the **PR title and
+body** against the `repo-layout.md` §7 AI-tooling blocklist: the landing
+commit is built from the title plus — under the "title and description"
+squash-message setting — the PR body, neither of which the local `commit-msg`
+hook sees. The commit-details squash mode folds in individual commit messages
+instead, and those the local hook already gates; between the two enforcement
+points, every squash-message mode is covered.
 
 **`build` is an aggregate, not the matrix.** A matrix job surfaces one check
 *per leg* (`build (ubuntu-latest)`, `build (windows-latest)`, …), and that
@@ -212,7 +220,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: open-cli-collective/.github/actions/pr-title@v1           # §1 grammar
+      - uses: open-cli-collective/.github/actions/pr-title@v1           # release.md §1.1 grammar + repo-layout.md §7 blocklist
 ```
 
 The composites pin `go-version` (from `go.mod`) and the golangci version, so a
