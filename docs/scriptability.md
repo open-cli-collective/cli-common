@@ -67,7 +67,7 @@ Refer to `working-with-secrets.md` §1.5 — that doc is the source of truth. Su
 
 New CLIs MUST implement both `init` (for first-time setup of multiple values at once) and `set-credential` (for credential rotation, `op run`–driven setup, MDM installers, and the multi-secret-stdin avoidance case). `sfdc` is missing `set-credential` today — that is the canonical divergence.
 
-`set-credential` MUST also ship `--json` from the start per `output-and-rendering.md` §2 (the secrets standard target). Cross-ref: `working-with-secrets.md` §1.5.2 specifies the JSON envelope shape (`{"ref":..., "key":..., "backend":..., "written":true}`) and exit-code-per-failure-class contract.
+`set-credential` MUST also ship `--json` from the start per `output-and-rendering.md` §2 (the secrets standard target). Cross-ref: `working-with-secrets.md` §1.5.2 specifies the JSON envelope shape (`{"ref":..., "key":..., "backend":..., "written":true}`) and the exit-code contract (binary success/failure is the MUST; per-class codes are advisory per §3.1).
 
 ---
 
