@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/byteness/go-libsecret v0.0.0-20260108215642-107379d3dee0
-	github.com/byteness/keyring v1.9.3
+	github.com/byteness/keyring v1.11.0
 	github.com/byteness/percent v0.2.2
 	github.com/dvsekhvalnov/jose2go v1.8.0
 	github.com/godbus/dbus/v5 v5.2.2
@@ -28,8 +28,7 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
-	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/term v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
