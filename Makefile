@@ -1,7 +1,8 @@
 .PHONY: check tidy lint test build
 
-# CI gate: everything that must pass before merge.
-check: tidy lint test
+# CI gate: everything that must pass before merge (repo-layout.md §2.1 —
+# check mirrors CI, including the build step).
+check: tidy lint test build
 
 # Tidy and verify the module is clean. Catches both modified tracked and
 # newly-generated untracked go.mod/go.sum (the latter once deps are added).
