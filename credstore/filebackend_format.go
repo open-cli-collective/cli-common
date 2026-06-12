@@ -18,7 +18,14 @@ type persistedKeyringItem struct {
 }
 
 func encodeFileKeyringItem(it keyringItem, password string) (string, error) {
-	bytes, err := json.Marshal(persistedKeyringItem{Key: it.key, Data: it.data})
+	bytes, err := json.Marshal(persistedKeyringItem{
+		Key:                         it.key,
+		Data:                        it.data,
+		Label:                       it.label,
+		Description:                 it.description,
+		KeychainNotTrustApplication: it.keychainNotTrustApplication,
+		KeychainNotSynchronizable:   it.keychainNotSynchronizable,
+	})
 	if err != nil {
 		return "", err
 	}

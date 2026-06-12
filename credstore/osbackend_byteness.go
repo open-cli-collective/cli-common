@@ -11,12 +11,13 @@ import (
 
 func openKeyringBackend(kind Backend, cfg backendConfig) (keyringBackend, error) {
 	kcfg := keyring.Config{
-		ServiceName:     cfg.serviceName,
-		AllowedBackends: []keyring.BackendType{keyring.BackendType(cfg.allowedBackend)},
-		FileDir:         cfg.fileDir,
-		PassDir:         cfg.passDir,
-		PassCmd:         cfg.passCmd,
-		PassPrefix:      cfg.passPrefix,
+		ServiceName:              cfg.serviceName,
+		AllowedBackends:          []keyring.BackendType{keyring.BackendType(cfg.allowedBackend)},
+		KeychainTrustApplication: cfg.keychainTrustApplication,
+		FileDir:                  cfg.fileDir,
+		PassDir:                  cfg.passDir,
+		PassCmd:                  cfg.passCmd,
+		PassPrefix:               cfg.passPrefix,
 	}
 	if cfg.filePasswordFunc != nil {
 		kcfg.FilePasswordFunc = keyring.PromptFunc(cfg.filePasswordFunc)
@@ -40,11 +41,25 @@ func (b bytenessBackend) get(itemKey string) (keyringItem, error) {
 		}
 		return keyringItem{}, err
 	}
-	return keyringItem{key: it.Key, data: it.Data}, nil
+	return keyringItem{
+		key:                         it.Key,
+		data:                        it.Data,
+		label:                       it.Label,
+		description:                 it.Description,
+		keychainNotTrustApplication: it.KeychainNotTrustApplication,
+		keychainNotSynchronizable:   it.KeychainNotSynchronizable,
+	}, nil
 }
 
 func (b bytenessBackend) set(it keyringItem) error {
-	return b.kr.Set(keyring.Item{Key: it.key, Data: it.data})
+	return b.kr.Set(keyring.Item{
+		Key:                         it.key,
+		Data:                        it.data,
+		Label:                       it.label,
+		Description:                 it.description,
+		KeychainNotTrustApplication: it.keychainNotTrustApplication,
+		KeychainNotSynchronizable:   it.keychainNotSynchronizable,
+	})
 }
 
 func (b bytenessBackend) remove(itemKey string) error {

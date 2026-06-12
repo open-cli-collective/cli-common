@@ -131,6 +131,14 @@ Within a bundle, individual secrets are addressed by well-known keys defined per
 
 So `slack-chat-api/work-account` with secret `bot_token` becomes `ServiceName="slack-chat-api"`, `Item.Key="work-account/bot_token"`. This makes `Keyring.Keys()` enumerable per-service for `config show` and `config clear`, and gives a deterministic, inspectable layout when a user opens Keychain Access / Credential Manager / `secret-tool`.
 
+On macOS, new or overwritten Keychain generic-password items MUST also carry a
+deterministic user-facing label and description derived from the same mapping:
+`Label = "<service> <profile>/<key>"` and `Description = "Credential for
+<service> <profile>/<key>"`. New or overwritten items trust the calling signed
+application by default (`KeychainTrustApplication` / implied self). Existing
+items are not migrated in place: if an older item has blank metadata or older
+ACL state, it keeps that state until the CLI rewrites or overwrites it.
+
 Because `/` is structural in this mapping, **`/` is forbidden inside any segment.** Allowed characters within `service`, `profile`, and `key` are `[A-Za-z0-9_-]`. The shared package rejects anything else at write time with a clear error. CLIs that need a richer identifier (e.g. an email address as a profile) must escape it; the shared package provides helpers.
 
 **Multi-key-per-ref is supported by all three platform backends.** A `Keyring` opened against one `ServiceName` holds any number of `Item`s with distinct `Item.Key` values. On macOS this is one Keychain service with multiple account names; on Windows, one target-name prefix with multiple targets; on Linux Secret Service, one collection with multiple items distinguished by attributes. So `slack-chat-api/work-account` legitimately holds both `work-account/bot_token` and `work-account/user_token` as separate, independently-readable entries.
