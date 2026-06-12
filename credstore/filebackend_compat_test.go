@@ -97,6 +97,41 @@ func TestFileBackendEncodingMatchesByteNessShape(t *testing.T) {
 	}
 }
 
+func TestFileBackendEncodingPreservesMetadataFields(t *testing.T) {
+	passphrase := "metadata-" + "passphrase"
+	token, err := encodeFileKeyringItem(keyringItem{
+		key:                         "default/tok",
+		data:                        []byte("shape-value"),
+		label:                       "codereview default/tok",
+		description:                 "Credential for codereview default/tok",
+		keychainNotTrustApplication: true,
+		keychainNotSynchronizable:   true,
+	}, passphrase)
+	if err != nil {
+		t.Fatalf("encodeFileKeyringItem: %v", err)
+	}
+	payload, _, err := jose.Decode(token, passphrase)
+	if err != nil {
+		t.Fatalf("jose.Decode: %v", err)
+	}
+	var got persistedKeyringItem
+	if err := json.Unmarshal([]byte(payload), &got); err != nil {
+		t.Fatalf("json.Unmarshal payload: %v", err)
+	}
+	if got.Label != "codereview default/tok" {
+		t.Fatalf("Label = %q, want %q", got.Label, "codereview default/tok")
+	}
+	if got.Description != "Credential for codereview default/tok" {
+		t.Fatalf("Description = %q, want %q", got.Description, "Credential for codereview default/tok")
+	}
+	if !got.KeychainNotTrustApplication {
+		t.Fatal("KeychainNotTrustApplication = false, want true")
+	}
+	if !got.KeychainNotSynchronizable {
+		t.Fatal("KeychainNotSynchronizable = false, want true")
+	}
+}
+
 func writeRawFileBackendItem(t *testing.T, base, service, encodedName, token string) {
 	t.Helper()
 	dir := filepath.Join(base, service, "keyring")

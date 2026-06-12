@@ -20,8 +20,12 @@ var errKeyringItemNotFound = errors.New("credstore: keyring item not found")
 type promptFunc func(string) (string, error)
 
 type keyringItem struct {
-	key  string
-	data []byte
+	key                         string
+	data                        []byte
+	label                       string
+	description                 string
+	keychainNotTrustApplication bool
+	keychainNotSynchronizable   bool
 }
 
 type keyringBackend interface {
@@ -32,13 +36,14 @@ type keyringBackend interface {
 }
 
 type backendConfig struct {
-	serviceName      string
-	allowedBackend   Backend
-	fileDir          string
-	filePasswordFunc promptFunc
-	passDir          string
-	passCmd          string
-	passPrefix       string
+	serviceName              string
+	allowedBackend           Backend
+	keychainTrustApplication bool
+	fileDir                  string
+	filePasswordFunc         promptFunc
+	passDir                  string
+	passCmd                  string
+	passPrefix               string
 }
 
 // osKeyringBackend adapts a platform keyring implementation to the
@@ -47,6 +52,7 @@ type backendConfig struct {
 type osKeyringBackend struct {
 	kr          keyringBackend
 	backendKind Backend
+	service     string
 }
 
 // openOSBackend opens exactly the selected backend. The opener is
@@ -64,7 +70,7 @@ func openOSBackend(kind Backend, service string, opts *Options, getenv func(stri
 	if err != nil {
 		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
 	}
-	return &osKeyringBackend{kr: kr, backendKind: kind}, nil
+	return &osKeyringBackend{kr: kr, backendKind: kind, service: service}, nil
 }
 
 // preflightOSBackend runs cheap, actionable pre-construction checks for
@@ -118,13 +124,35 @@ func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func
 		// CLI gets its own subtree.
 		cfg.passPrefix = service
 	case BackendKeychain, BackendWinCred, BackendSecretService:
-		// No additional construction — these use ServiceName directly.
+		// All three use ServiceName directly. On macOS, trust the current
+		// signed application by default so newly-written items do not show
+		// the generic "allow access?" dialog for the same binary.
+		if kind == BackendKeychain {
+			cfg.keychainTrustApplication = true
+		}
 	case BackendMemory:
 		// BackendMemory short-circuits in store.Open before reaching
 		// openOSBackend; this arm exists only to keep the exhaustive
 		// switch honest.
 	}
 	return cfg, nil
+}
+
+func keyringItemForWrite(service, itemKey string, value []byte) keyringItem {
+	return keyringItem{
+		key:         itemKey,
+		data:        value,
+		label:       keyringItemLabel(service, itemKey),
+		description: keyringItemDescription(service, itemKey),
+	}
+}
+
+func keyringItemLabel(service, itemKey string) string {
+	return service + " " + itemKey
+}
+
+func keyringItemDescription(service, itemKey string) string {
+	return "Credential for " + service + " " + itemKey
 }
 
 // fileKeyringDir is the encrypted-file backend location and the test
@@ -202,7 +230,7 @@ func (b *osKeyringBackend) set(itemKey, value string, overwrite bool) error {
 			return fmt.Errorf("credstore: %s set %q (overwrite pre-check): %w", b.backendKind, itemKey, err)
 		}
 	}
-	if err := b.kr.set(keyringItem{key: itemKey, data: []byte(value)}); err != nil {
+	if err := b.kr.set(keyringItemForWrite(b.service, itemKey, []byte(value))); err != nil {
 		return fmt.Errorf("credstore: %s set %q: %w", b.backendKind, itemKey, err)
 	}
 	return nil

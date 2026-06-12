@@ -388,6 +388,66 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 			t.Errorf("fileDir is empty; expected file backend to set it")
 		}
 	})
+
+	t.Run("keychain: trust current application by default", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendKeychain, "codereview", &Options{}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig keychain: %v", err)
+		}
+		if !cfg.keychainTrustApplication {
+			t.Fatal("keychainTrustApplication = false, want true")
+		}
+	})
+
+	t.Run("wincred: do not set keychain trust flag", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendWinCred, "codereview", &Options{}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig wincred: %v", err)
+		}
+		if cfg.keychainTrustApplication {
+			t.Fatal("keychainTrustApplication = true, want false")
+		}
+	})
+}
+
+func TestKeyringItemForWriteBuildsInspectableMetadata(t *testing.T) {
+	got := keyringItemForWrite("codereview", "default/git_token", []byte("secret"))
+
+	if got.key != "default/git_token" || string(got.data) != "secret" {
+		t.Fatalf("item = (%q,%q), want (default/git_token,secret)", got.key, string(got.data))
+	}
+	if got.label != "codereview default/git_token" {
+		t.Fatalf("label = %q, want %q", got.label, "codereview default/git_token")
+	}
+	if got.description != "Credential for codereview default/git_token" {
+		t.Fatalf("description = %q, want %q", got.description, "Credential for codereview default/git_token")
+	}
+	if got.keychainNotTrustApplication {
+		t.Fatal("keychainNotTrustApplication = true, want false")
+	}
+	if got.keychainNotSynchronizable {
+		t.Fatal("keychainNotSynchronizable = true, want false")
+	}
+}
+
+func TestOSKeyringBackendSetStampsMetadataBeforeWrite(t *testing.T) {
+	f := newFakeKeyring()
+	b := &osKeyringBackend{kr: f, backendKind: BackendKeychain, service: "codereview"}
+
+	if err := b.set("default/git_token", "secret", true); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	got, ok := f.items["default/git_token"]
+	if !ok {
+		t.Fatal("backend write did not reach fake keyring")
+	}
+	if got.label != "codereview default/git_token" {
+		t.Fatalf("label = %q, want %q", got.label, "codereview default/git_token")
+	}
+	if got.description != "Credential for codereview default/git_token" {
+		t.Fatalf("description = %q, want %q", got.description, "Credential for codereview default/git_token")
+	}
 }
 
 // TestOpenOSBackend_PassOnWindows_FailsGracefully pins the Windows
