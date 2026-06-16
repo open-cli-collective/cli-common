@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Backend identifies which credential backend a Store is using.
@@ -37,7 +38,16 @@ const (
 	BackendSecretService Backend = "secret-service" // Linux — later unit
 	BackendFile          Backend = "file"           // encrypted file — later unit
 	BackendPass          Backend = "pass"           // pass(1) CLI shell-out; !windows; requires `pass` binary + initialized password-store
+	BackendOP            Backend = "op"             // 1Password service account backend
+	BackendOPConnect     Backend = "op-connect"     // 1Password Connect backend
+	BackendOPDesktop     Backend = "op-desktop"     // 1Password desktop integration backend
 	BackendMemory        Backend = "memory"         // tests/CI, no disk
+)
+
+const (
+	DefaultOnePasswordServiceTokenEnv   = "OP_SERVICE_ACCOUNT_TOKEN" // #nosec G101 -- environment variable name, not a secret
+	DefaultOnePasswordConnectTokenEnv   = "OP_CONNECT_TOKEN"         // #nosec G101 -- environment variable name, not a secret
+	DefaultOnePasswordDesktopAccountEnv = "OP_DESKTOP_ACCOUNT_ID"    // #nosec G101 -- environment variable name, not a secret
 )
 
 // Source describes how the backend was selected.
@@ -73,6 +83,25 @@ type Options struct {
 	// for BackendFile. Nil is fine for headless/CI/tests that set the
 	// env var instead.
 	FilePassphrase func() (string, error)
+	// OnePassword carries non-secret backend-specific wiring for the
+	// 1Password backends. Secrets themselves still come from the backend's
+	// runtime environment or native integration, never from config.
+	OnePassword *OnePasswordOptions
+}
+
+// OnePasswordOptions configures the opt-in 1Password backend families.
+// All fields are non-secret. Blank Env names fall back to the upstream
+// ByteNess defaults during backend construction.
+type OnePasswordOptions struct {
+	Timeout          time.Duration
+	VaultID          string
+	ItemTitlePrefix  string
+	ItemTag          string
+	ItemFieldTitle   string
+	ConnectHost      string
+	ConnectTokenEnv  string
+	ServiceTokenEnv  string
+	DesktopAccountID string
 }
 
 // Sentinels and typed errors. All are matchable via errors.Is.

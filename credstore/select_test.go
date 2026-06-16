@@ -118,6 +118,25 @@ func TestParseBackend_RecognizesPass(t *testing.T) {
 	}
 }
 
+func TestParseBackend_RecognizesOnePasswordBackends(t *testing.T) {
+	tests := map[string]Backend{
+		"op":         BackendOP,
+		"op-connect": BackendOPConnect,
+		"op-desktop": BackendOPDesktop,
+	}
+	for input, want := range tests {
+		t.Run(input, func(t *testing.T) {
+			got, ok := parseBackend(input)
+			if !ok {
+				t.Fatalf("parseBackend(%q) = (_, false); want true", input)
+			}
+			if got != want {
+				t.Fatalf("parseBackend(%q) = %q, want %q", input, got, want)
+			}
+		})
+	}
+}
+
 // TestSelectBackendPassNeverAuto mirrors the BackendMemory contract:
 // pass is selectable explicitly / via env / via config, but never via
 // auto. A future selectBackend refactor that started auto-picking pass

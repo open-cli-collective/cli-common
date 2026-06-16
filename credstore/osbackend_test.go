@@ -389,6 +389,58 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 		}
 	})
 
+	t.Run("1password service account: forwards non-secret options", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendOP, "codereview", &Options{
+			OnePassword: &OnePasswordOptions{
+				Timeout:          5,
+				VaultID:          "vault-123",
+				ItemTitlePrefix:  "cr",
+				ItemTag:          "codereview",
+				ItemFieldTitle:   "credential",
+				ServiceTokenEnv:  "CUSTOM_OP_TOKEN",
+				DesktopAccountID: "desktop-account",
+			},
+		}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig op: %v", err)
+		}
+		if cfg.opTimeout != 5 {
+			t.Fatalf("opTimeout = %v, want 5", cfg.opTimeout)
+		}
+		if cfg.opVaultID != "vault-123" {
+			t.Fatalf("opVaultID = %q, want %q", cfg.opVaultID, "vault-123")
+		}
+		if cfg.opItemTitlePrefix != "cr" || cfg.opItemTag != "codereview" || cfg.opItemFieldTitle != "credential" {
+			t.Fatalf("unexpected item metadata forwarding: %+v", cfg)
+		}
+		if cfg.opTokenEnv != "CUSTOM_OP_TOKEN" {
+			t.Fatalf("opTokenEnv = %q, want %q", cfg.opTokenEnv, "CUSTOM_OP_TOKEN")
+		}
+		if cfg.opDesktopAccountID != "desktop-account" {
+			t.Fatalf("opDesktopAccountID = %q, want %q", cfg.opDesktopAccountID, "desktop-account")
+		}
+	})
+
+	t.Run("1password connect: forwards host and token env", func(t *testing.T) {
+		// #nosec G101 -- test fixture values are non-secret placeholders
+		cfg, err := buildKeyringConfig(BackendOPConnect, "codereview", &Options{
+			OnePassword: &OnePasswordOptions{
+				VaultID:         "vault-123",
+				ConnectHost:     "https://connect.example",
+				ConnectTokenEnv: "CUSTOM_OP_CONNECT_TOKEN",
+			},
+		}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig op-connect: %v", err)
+		}
+		if cfg.opConnectHost != "https://connect.example" {
+			t.Fatalf("opConnectHost = %q, want %q", cfg.opConnectHost, "https://connect.example")
+		}
+		if cfg.opConnectTokenEnv != "CUSTOM_OP_CONNECT_TOKEN" {
+			t.Fatalf("opConnectTokenEnv = %q, want %q", cfg.opConnectTokenEnv, "CUSTOM_OP_CONNECT_TOKEN")
+		}
+	})
+
 	t.Run("keychain: trust current application by default", func(t *testing.T) {
 		cfg, err := buildKeyringConfig(BackendKeychain, "codereview", &Options{}, emptyEnv)
 		if err != nil {

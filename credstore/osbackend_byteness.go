@@ -10,6 +10,15 @@ import (
 )
 
 func openKeyringBackend(kind Backend, cfg backendConfig) (keyringBackend, error) {
+	kcfg := keyringConfigFromBackendConfig(cfg)
+	kr, err := keyring.Open(kcfg)
+	if err != nil {
+		return nil, fmt.Errorf("keyring open %s: %w", kind, err)
+	}
+	return bytenessBackend{kr: kr}, nil
+}
+
+func keyringConfigFromBackendConfig(cfg backendConfig) keyring.Config {
 	kcfg := keyring.Config{
 		ServiceName:              cfg.serviceName,
 		AllowedBackends:          []keyring.BackendType{keyring.BackendType(cfg.allowedBackend)},
@@ -18,15 +27,20 @@ func openKeyringBackend(kind Backend, cfg backendConfig) (keyringBackend, error)
 		PassDir:                  cfg.passDir,
 		PassCmd:                  cfg.passCmd,
 		PassPrefix:               cfg.passPrefix,
+		OPTimeout:                cfg.opTimeout,
+		OPVaultID:                cfg.opVaultID,
+		OPItemTitlePrefix:        cfg.opItemTitlePrefix,
+		OPItemTag:                cfg.opItemTag,
+		OPItemFieldTitle:         cfg.opItemFieldTitle,
+		OPConnectHost:            cfg.opConnectHost,
+		OPConnectTokenEnv:        cfg.opConnectTokenEnv,
+		OPTokenEnv:               cfg.opTokenEnv,
+		OPDesktopAccountID:       cfg.opDesktopAccountID,
 	}
 	if cfg.filePasswordFunc != nil {
 		kcfg.FilePasswordFunc = keyring.PromptFunc(cfg.filePasswordFunc)
 	}
-	kr, err := keyring.Open(kcfg)
-	if err != nil {
-		return nil, fmt.Errorf("keyring open %s: %w", kind, err)
-	}
-	return bytenessBackend{kr: kr}, nil
+	return kcfg
 }
 
 type bytenessBackend struct {

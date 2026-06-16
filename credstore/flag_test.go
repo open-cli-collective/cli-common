@@ -50,6 +50,9 @@ func TestAllBackends_MatchesConstants(t *testing.T) {
 		BackendSecretService,
 		BackendFile,
 		BackendPass,
+		BackendOP,
+		BackendOPConnect,
+		BackendOPDesktop,
 		BackendMemory,
 	}
 	if len(allBackends) != len(expected) {
@@ -220,5 +223,14 @@ func TestBackendFlagUsage_IncludesPass(t *testing.T) {
 	usage := BackendFlagUsage()
 	if !strings.Contains(usage, "pass") {
 		t.Errorf("BackendFlagUsage() should mention pass; got %q", usage)
+	}
+}
+
+func TestBackendFlagUsage_IncludesOnePasswordBackends(t *testing.T) {
+	usage := BackendFlagUsage()
+	for _, want := range []string{"op", "op-connect", "op-desktop"} {
+		if !strings.Contains(usage, want) {
+			t.Errorf("BackendFlagUsage() should mention %q; got %q", want, usage)
+		}
 	}
 }

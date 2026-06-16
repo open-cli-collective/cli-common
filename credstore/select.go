@@ -74,6 +74,9 @@ var allBackends = []Backend{
 	BackendSecretService,
 	BackendFile,
 	BackendPass,
+	BackendOP,
+	BackendOPConnect,
+	BackendOPDesktop,
 	BackendMemory,
 }
 
