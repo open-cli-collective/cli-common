@@ -393,7 +393,7 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 	t.Run("1password service account: forwards non-secret options", func(t *testing.T) {
 		cfg, err := buildKeyringConfig(BackendOP, "codereview", &Options{
 			OnePassword: &OnePasswordOptions{
-				Timeout:          5,
+				Timeout:          5 * time.Second,
 				VaultID:          "vault-123",
 				ItemTitlePrefix:  "cr",
 				ItemTag:          "codereview",
@@ -405,8 +405,8 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildKeyringConfig op: %v", err)
 		}
-		if cfg.opTimeout != 5 {
-			t.Fatalf("opTimeout = %v, want 5", cfg.opTimeout)
+		if cfg.opTimeout != 5*time.Second {
+			t.Fatalf("opTimeout = %v, want 5s", cfg.opTimeout)
 		}
 		if cfg.opVaultID != "vault-123" {
 			t.Fatalf("opVaultID = %q, want %q", cfg.opVaultID, "vault-123")

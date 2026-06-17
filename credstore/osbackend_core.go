@@ -146,6 +146,8 @@ func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func
 	case BackendOP, BackendOPConnect, BackendOPDesktop:
 		cfg.opItemTitlePrefix = service
 		cfg.opItemTag = service
+		// ByteNess requires a non-zero OPTimeout for OP and OPDesktop.
+		// OPConnect does not consult OPTimeout during construction.
 		if kind == BackendOP || kind == BackendOPDesktop {
 			cfg.opTimeout = DefaultOnePasswordTimeout
 		}

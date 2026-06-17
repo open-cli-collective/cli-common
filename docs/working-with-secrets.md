@@ -178,7 +178,7 @@ The file backend is encrypted with a passphrase. For org-friendly headless use (
 
 Per-service (not a single global passphrase) so that a leak of one env var compromises only one CLI's secrets, and so that org tooling injecting credentials for one CLI doesn't need access to every CLI's keyring. Document the trade-off in `config show`: when the file backend is in use, the entry indicates whether it's passphrase-prompted or env-var-supplied, so the user understands the security posture of their setup.
 
-**Env-var exceptions, named explicitly.** This standard otherwise bans env vars as a runtime source of *API credential material* (a CLI must not read `FOO_TOKEN` and use it as the upstream service credential at call time — §1.11 acceptance item 2). Backend-auth material may come from env vars only for explicitly selected backends that document that contract: `<SERVICE>_KEYRING_PASSPHRASE` unlocks the encrypted-file backend, and the 1Password backends may read `OP_SERVICE_ACCOUNT_TOKEN` / `OP_CONNECT_TOKEN` (or caller-configured token-env names) to authenticate to the selected 1Password store. These values unlock or authenticate the credential backend so the CLI can fetch the actual service token; they are not the upstream API credential. The distinction matters because the standard's threat model treats env vars as a leaky channel (process lists, parent-process inheritance, transcripts); these exceptions are deliberate backend-specific trade-offs, not a general escape hatch. Non-secret runtime env vars (the backend selector above; future runtime knobs that don't carry secret material) are not exceptions because they don't fall under the ban in the first place.
+**Env-var exceptions, named explicitly.** This standard otherwise bans env vars as a runtime source of *API credential material* (a CLI must not read `FOO_TOKEN` and use it as the upstream service credential at call time — §1.11 acceptance item 2). Backend-auth material may come from env vars only for explicitly selected backends that document that contract: `<SERVICE>_KEYRING_PASSPHRASE` unlocks the encrypted-file backend, and the 1Password backends may read `OP_SERVICE_ACCOUNT_TOKEN` / `OP_CONNECT_TOKEN` (or caller-configured token-env names) to authenticate to the selected 1Password store. `op-desktop` may also read `OP_DESKTOP_ACCOUNT_ID` as a backend account selector. These values unlock, authenticate, or select the credential backend so the CLI can fetch the actual service token; they are not the upstream API credential. The distinction matters because the standard's threat model treats env vars as a leaky channel (process lists, parent-process inheritance, transcripts); these exceptions are deliberate backend-specific trade-offs, not a general escape hatch. Non-secret runtime env vars (the backend selector above; future runtime knobs that don't carry secret material) are not exceptions because they don't fall under the ban in the first place.
 
 ## §1.5 Credential ingress
 
@@ -333,7 +333,13 @@ A note on what credstore exposes: `credstore` recognizes nine backend names — 
 -tags keyring_nopassage
 ```
 
-`keyring_no1password` is an allowed opt-out for consumers that intentionally do not expose 1Password, such as compliance-scoped or minimal-dependency builds; requesting `op`, `op-connect`, or `op-desktop` in such a binary must fail closed with `ErrBackendNotImplemented`. `keyring_nofile` and `keyring_nopass` MUST NOT be used: credstore's cgo builds delegate the `file` and `pass` backends to `byteness/keyring`, so those tags would break exposed functionality. cli-common's own CI builds and tests both the standard tag set and the optional `keyring_no1password,keyring_nopassage` opt-out set.
+The 1Password SDKs are not free: measured 2026-06-11 against keyring v1.9.3 on `slck`, they pulled in 63 packages and about 10.6 MB of attributable symbols, including a WASM runtime (`wazero` via `extism`) and the archived `jaeger-client-go`. Consumer CLIs that intentionally do not expose 1Password, such as compliance-scoped or minimal-dependency builds, MUST build with:
+
+```
+-tags keyring_no1password,keyring_nopassage
+```
+
+Requesting `op`, `op-connect`, or `op-desktop` in such a binary must fail closed with `ErrBackendNotImplemented`. `keyring_nofile` and `keyring_nopass` MUST NOT be used: credstore's cgo builds delegate the `file` and `pass` backends to `byteness/keyring`, so those tags would break exposed functionality. cli-common's own CI builds and tests both the standard tag set and the optional `keyring_no1password,keyring_nopassage` opt-out set.
 
 ## §1.11 Compliance criteria
 

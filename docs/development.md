@@ -46,9 +46,9 @@ ported consumer is green against the candidate SHA.
 
 ## Keyring opt-out tags
 
-`byteness/keyring` (≥ v1.11.0) supports per-backend opt-out build tags;
-consumer CLIs that expose 1Password build with `-tags keyring_nopassage` as
-standard configuration. CI here tests that set plus the optional
-`keyring_no1password,keyring_nopassage` opt-out path — see
-[`working-with-secrets.md`](working-with-secrets.md) §1.10 for the contract and
-why `keyring_nofile` / `keyring_nopass` are excluded.
+`byteness/keyring` (≥ v1.11.0) supports per-backend opt-out build tags.
+Consumer CLIs that expose 1Password build with `-tags keyring_nopassage`.
+Consumer CLIs that intentionally skip 1Password support build with
+`-tags keyring_no1password,keyring_nopassage`. CI here tests both sets — see
+[`working-with-secrets.md`](working-with-secrets.md) §1.10 for the dependency
+trade-off and why `keyring_nofile` / `keyring_nopass` are excluded.
