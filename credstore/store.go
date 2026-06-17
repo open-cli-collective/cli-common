@@ -6,8 +6,9 @@ package credstore
 // <service>/<profile>/<key> -> ServiceName + <profile>/<key> mapping),
 // and §1.5/§1.5.2 (overwrite semantics, allowed-key enforcement).
 //
-// Backends: the in-memory backend (memory.go) and the real OS keyrings
-// (osbackend.go: keychain/wincred/secret-service/file) selected per
+// Backends: the in-memory backend (memory.go) and the real credential
+// backends (osbackend*.go: keychain/wincred/secret-service/file/pass/op)
+// selected per
 // §1.4 (select.go). Selection is fail-closed — an unrecognized backend
 // is an error and memory is never auto-selected, never a silent
 // degradation.
@@ -48,6 +49,7 @@ const (
 	DefaultOnePasswordServiceTokenEnv   = "OP_SERVICE_ACCOUNT_TOKEN" // #nosec G101 -- environment variable name, not a secret
 	DefaultOnePasswordConnectTokenEnv   = "OP_CONNECT_TOKEN"         // #nosec G101 -- environment variable name, not a secret
 	DefaultOnePasswordDesktopAccountEnv = "OP_DESKTOP_ACCOUNT_ID"    // #nosec G101 -- environment variable name, not a secret
+	DefaultOnePasswordTimeout           = 30 * time.Second
 )
 
 // Source describes how the backend was selected.
@@ -90,8 +92,12 @@ type Options struct {
 }
 
 // OnePasswordOptions configures the opt-in 1Password backend families.
-// All fields are non-secret. Blank Env names fall back to the upstream
-// ByteNess defaults during backend construction.
+// All fields are non-secret. Blank token env names and backend-specific
+// connection selectors fall back to upstream ByteNess defaults during
+// backend construction. Blank Timeout uses DefaultOnePasswordTimeout for
+// backends that require one. Blank ItemTitlePrefix and ItemTag are
+// scoped to the credstore service name so separate CLI consumers do not
+// collide in the same 1Password vault.
 type OnePasswordOptions struct {
 	Timeout          time.Duration
 	VaultID          string

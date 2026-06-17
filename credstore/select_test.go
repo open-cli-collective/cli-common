@@ -137,6 +137,40 @@ func TestParseBackend_RecognizesOnePasswordBackends(t *testing.T) {
 	}
 }
 
+// TestSelectBackendOnePasswordNeverAuto mirrors the pass/memory contract:
+// 1Password backends are selectable explicitly / via env / via config, but
+// never by auto. Selecting one has external availability and account/vault
+// coupling, so auto-picking it would be a stealth runtime behavior change.
+func TestSelectBackendOnePasswordNeverAuto(t *testing.T) {
+	const svc = "svc"
+	for _, kind := range []Backend{BackendOP, BackendOPConnect, BackendOPDesktop} {
+		t.Run(string(kind), func(t *testing.T) {
+			if b, src, err := selectBackend(svc, &Options{Backend: kind}, envFrom(nil), "linux"); err != nil || b != kind || src != SourceExplicit {
+				t.Fatalf("explicit %s = (%q,%q,%v), want (%q,explicit,nil)", kind, b, src, err, kind)
+			}
+			if b, src, err := selectBackend(svc, &Options{}, envFrom(map[string]string{"SVC_KEYRING_BACKEND": string(kind)}), "linux"); err != nil || b != kind || src != SourceEnv {
+				t.Fatalf("env %s = (%q,%q,%v), want (%q,env,nil)", kind, b, src, err, kind)
+			}
+			if b, src, err := selectBackend(svc, &Options{ConfigBackend: kind}, envFrom(nil), "linux"); err != nil || b != kind || src != SourceConfig {
+				t.Fatalf("config %s = (%q,%q,%v), want (%q,config,nil)", kind, b, src, err, kind)
+			}
+		})
+	}
+
+	for _, goos := range []string{"darwin", "windows", "linux"} {
+		b, src, err := selectBackend(svc, &Options{}, envFrom(nil), goos)
+		if err != nil {
+			continue
+		}
+		if b == BackendOP || b == BackendOPConnect || b == BackendOPDesktop {
+			t.Fatalf("auto on %s selected %s; 1Password backends must be opt-in only", goos, b)
+		}
+		if src != SourceAuto {
+			t.Fatalf("auto %s src = %q, want auto", goos, src)
+		}
+	}
+}
+
 // TestSelectBackendPassNeverAuto mirrors the BackendMemory contract:
 // pass is selectable explicitly / via env / via config, but never via
 // auto. A future selectBackend refactor that started auto-picking pass

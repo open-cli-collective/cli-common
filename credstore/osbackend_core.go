@@ -144,11 +144,22 @@ func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func
 			cfg.keychainTrustApplication = true
 		}
 	case BackendOP, BackendOPConnect, BackendOPDesktop:
+		cfg.opItemTitlePrefix = service
+		cfg.opItemTag = service
+		if kind == BackendOP || kind == BackendOPDesktop {
+			cfg.opTimeout = DefaultOnePasswordTimeout
+		}
 		if opts != nil && opts.OnePassword != nil {
-			cfg.opTimeout = opts.OnePassword.Timeout
+			if opts.OnePassword.Timeout != 0 {
+				cfg.opTimeout = opts.OnePassword.Timeout
+			}
 			cfg.opVaultID = opts.OnePassword.VaultID
-			cfg.opItemTitlePrefix = opts.OnePassword.ItemTitlePrefix
-			cfg.opItemTag = opts.OnePassword.ItemTag
+			if opts.OnePassword.ItemTitlePrefix != "" {
+				cfg.opItemTitlePrefix = opts.OnePassword.ItemTitlePrefix
+			}
+			if opts.OnePassword.ItemTag != "" {
+				cfg.opItemTag = opts.OnePassword.ItemTag
+			}
 			cfg.opItemFieldTitle = opts.OnePassword.ItemFieldTitle
 			cfg.opConnectHost = opts.OnePassword.ConnectHost
 			cfg.opConnectTokenEnv = opts.OnePassword.ConnectTokenEnv

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestFileBackendRoundTrip exercises the real encrypted-file backend
@@ -441,6 +442,33 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 		}
 	})
 
+	t.Run("1password defaults: service-scoped item metadata and required timeouts", func(t *testing.T) {
+		for _, tc := range []struct {
+			kind        Backend
+			wantTimeout time.Duration
+		}{
+			{BackendOP, DefaultOnePasswordTimeout},
+			{BackendOPConnect, 0},
+			{BackendOPDesktop, DefaultOnePasswordTimeout},
+		} {
+			t.Run(string(tc.kind), func(t *testing.T) {
+				cfg, err := buildKeyringConfig(tc.kind, "codereview", &Options{}, emptyEnv)
+				if err != nil {
+					t.Fatalf("buildKeyringConfig %s: %v", tc.kind, err)
+				}
+				if cfg.opItemTitlePrefix != "codereview" {
+					t.Fatalf("opItemTitlePrefix = %q, want service-scoped prefix %q", cfg.opItemTitlePrefix, "codereview")
+				}
+				if cfg.opItemTag != "codereview" {
+					t.Fatalf("opItemTag = %q, want service-scoped tag %q", cfg.opItemTag, "codereview")
+				}
+				if cfg.opTimeout != tc.wantTimeout {
+					t.Fatalf("opTimeout = %v, want %v", cfg.opTimeout, tc.wantTimeout)
+				}
+			})
+		}
+	})
+
 	t.Run("keychain: trust current application by default", func(t *testing.T) {
 		cfg, err := buildKeyringConfig(BackendKeychain, "codereview", &Options{}, emptyEnv)
 		if err != nil {
@@ -557,7 +585,7 @@ func TestPreflightOSBackend_PassNotOnPath(t *testing.T) {
 func TestPreflightOSBackend_NonPassBackendsSkipPreflight(t *testing.T) {
 	t.Setenv("PATH", "")
 	for _, kind := range []Backend{
-		BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory,
+		BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendOP, BackendOPConnect, BackendOPDesktop, BackendMemory,
 	} {
 		if err := preflightOSBackend(kind); err != nil {
 			t.Errorf("preflightOSBackend(%q) = %v, want nil — non-pass backends must not preflight", kind, err)

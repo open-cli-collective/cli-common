@@ -40,10 +40,15 @@ jobs:
       - name: Test
         run: go test -v -race -coverprofile=coverage.out ./...
       # Standard consumer build configuration (working-with-secrets.md
-      # §1.10): credstore must stay green with the keyring opt-out tags
-      # the CLIs ship with. keyring_nofile / keyring_nopass are NOT in
-      # the set — credstore exposes those backends in cgo builds.
-      - name: Build and test with keyring opt-out tags
+      # §1.10): 1Password support is enabled, Passage is disabled.
+      - name: Build and test with standard keyring tags
+        run: |
+          go build -tags keyring_nopassage ./...
+          go test -race -tags keyring_nopassage ./...
+      # Optional compliance/minimal-dependency build configuration:
+      # 1Password support is compiled out but exposed file/pass backends
+      # remain enabled.
+      - name: Build and test with no-1Password opt-out tags
         run: |
           go build -tags keyring_no1password,keyring_nopassage ./...
           go test -race -tags keyring_no1password,keyring_nopassage ./...
