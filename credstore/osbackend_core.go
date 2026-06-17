@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 var errKeyringItemNotFound = errors.New("credstore: keyring item not found")
@@ -44,6 +45,15 @@ type backendConfig struct {
 	passDir                  string
 	passCmd                  string
 	passPrefix               string
+	opTimeout                time.Duration
+	opVaultID                string
+	opItemTitlePrefix        string
+	opItemTag                string
+	opItemFieldTitle         string
+	opConnectHost            string
+	opConnectTokenEnv        string
+	opTokenEnv               string
+	opDesktopAccountID       string
 }
 
 // osKeyringBackend adapts a platform keyring implementation to the
@@ -59,6 +69,9 @@ type osKeyringBackend struct {
 // build-tagged so static Unix builds do not import ByteNess keyring and
 // therefore do not compile its unused 1Password backends.
 func openOSBackend(kind Backend, service string, opts *Options, getenv func(string) string) (backend, error) {
+	if err := unsupportedOnePasswordBackendInBuild(kind); err != nil {
+		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
+	}
 	if err := preflightOSBackend(kind); err != nil {
 		return nil, fmt.Errorf("credstore: opening %s backend for service %q: %w", kind, service, err)
 	}
@@ -88,7 +101,7 @@ func preflightOSBackend(kind Backend) error {
 		if _, err := exec.LookPath("pass"); err != nil {
 			return fmt.Errorf("the pass(1) CLI is not on $PATH; install it (e.g. `apt install pass` / `brew install pass`) and run `pass init <gpg-key-id>` before selecting --backend pass")
 		}
-	case BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory:
+	case BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendOP, BackendOPConnect, BackendOPDesktop, BackendMemory:
 		// No preflight check — the openers (or store.Open's memory
 		// short-circuit) already return actionable errors.
 	}
@@ -129,6 +142,31 @@ func buildKeyringConfig(kind Backend, service string, opts *Options, getenv func
 		// the generic "allow access?" dialog for the same binary.
 		if kind == BackendKeychain {
 			cfg.keychainTrustApplication = true
+		}
+	case BackendOP, BackendOPConnect, BackendOPDesktop:
+		cfg.opItemTitlePrefix = service
+		cfg.opItemTag = service
+		// ByteNess requires a non-zero OPTimeout for OP and OPDesktop.
+		// OPConnect does not consult OPTimeout during construction.
+		if kind == BackendOP || kind == BackendOPDesktop {
+			cfg.opTimeout = DefaultOnePasswordTimeout
+		}
+		if opts != nil && opts.OnePassword != nil {
+			if opts.OnePassword.Timeout != 0 {
+				cfg.opTimeout = opts.OnePassword.Timeout
+			}
+			cfg.opVaultID = opts.OnePassword.VaultID
+			if opts.OnePassword.ItemTitlePrefix != "" {
+				cfg.opItemTitlePrefix = opts.OnePassword.ItemTitlePrefix
+			}
+			if opts.OnePassword.ItemTag != "" {
+				cfg.opItemTag = opts.OnePassword.ItemTag
+			}
+			cfg.opItemFieldTitle = opts.OnePassword.ItemFieldTitle
+			cfg.opConnectHost = opts.OnePassword.ConnectHost
+			cfg.opConnectTokenEnv = opts.OnePassword.ConnectTokenEnv
+			cfg.opTokenEnv = opts.OnePassword.ServiceTokenEnv
+			cfg.opDesktopAccountID = opts.OnePassword.DesktopAccountID
 		}
 	case BackendMemory:
 		// BackendMemory short-circuits in store.Open before reaching

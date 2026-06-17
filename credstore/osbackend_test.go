@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestFileBackendRoundTrip exercises the real encrypted-file backend
@@ -389,6 +390,85 @@ func TestBuildKeyringConfig_PassSetsPrefixToService(t *testing.T) {
 		}
 	})
 
+	t.Run("1password service account: forwards non-secret options", func(t *testing.T) {
+		cfg, err := buildKeyringConfig(BackendOP, "codereview", &Options{
+			OnePassword: &OnePasswordOptions{
+				Timeout:          5 * time.Second,
+				VaultID:          "vault-123",
+				ItemTitlePrefix:  "cr",
+				ItemTag:          "codereview",
+				ItemFieldTitle:   "credential",
+				ServiceTokenEnv:  "CUSTOM_OP_TOKEN",
+				DesktopAccountID: "desktop-account",
+			},
+		}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig op: %v", err)
+		}
+		if cfg.opTimeout != 5*time.Second {
+			t.Fatalf("opTimeout = %v, want 5s", cfg.opTimeout)
+		}
+		if cfg.opVaultID != "vault-123" {
+			t.Fatalf("opVaultID = %q, want %q", cfg.opVaultID, "vault-123")
+		}
+		if cfg.opItemTitlePrefix != "cr" || cfg.opItemTag != "codereview" || cfg.opItemFieldTitle != "credential" {
+			t.Fatalf("unexpected item metadata forwarding: %+v", cfg)
+		}
+		if cfg.opTokenEnv != "CUSTOM_OP_TOKEN" {
+			t.Fatalf("opTokenEnv = %q, want %q", cfg.opTokenEnv, "CUSTOM_OP_TOKEN")
+		}
+		if cfg.opDesktopAccountID != "desktop-account" {
+			t.Fatalf("opDesktopAccountID = %q, want %q", cfg.opDesktopAccountID, "desktop-account")
+		}
+	})
+
+	t.Run("1password connect: forwards host and token env", func(t *testing.T) {
+		// #nosec G101 -- test fixture values are non-secret placeholders
+		cfg, err := buildKeyringConfig(BackendOPConnect, "codereview", &Options{
+			OnePassword: &OnePasswordOptions{
+				VaultID:         "vault-123",
+				ConnectHost:     "https://connect.example",
+				ConnectTokenEnv: "CUSTOM_OP_CONNECT_TOKEN",
+			},
+		}, emptyEnv)
+		if err != nil {
+			t.Fatalf("buildKeyringConfig op-connect: %v", err)
+		}
+		if cfg.opConnectHost != "https://connect.example" {
+			t.Fatalf("opConnectHost = %q, want %q", cfg.opConnectHost, "https://connect.example")
+		}
+		if cfg.opConnectTokenEnv != "CUSTOM_OP_CONNECT_TOKEN" {
+			t.Fatalf("opConnectTokenEnv = %q, want %q", cfg.opConnectTokenEnv, "CUSTOM_OP_CONNECT_TOKEN")
+		}
+	})
+
+	t.Run("1password defaults: service-scoped item metadata and required timeouts", func(t *testing.T) {
+		for _, tc := range []struct {
+			kind        Backend
+			wantTimeout time.Duration
+		}{
+			{BackendOP, DefaultOnePasswordTimeout},
+			{BackendOPConnect, 0},
+			{BackendOPDesktop, DefaultOnePasswordTimeout},
+		} {
+			t.Run(string(tc.kind), func(t *testing.T) {
+				cfg, err := buildKeyringConfig(tc.kind, "codereview", &Options{}, emptyEnv)
+				if err != nil {
+					t.Fatalf("buildKeyringConfig %s: %v", tc.kind, err)
+				}
+				if cfg.opItemTitlePrefix != "codereview" {
+					t.Fatalf("opItemTitlePrefix = %q, want service-scoped prefix %q", cfg.opItemTitlePrefix, "codereview")
+				}
+				if cfg.opItemTag != "codereview" {
+					t.Fatalf("opItemTag = %q, want service-scoped tag %q", cfg.opItemTag, "codereview")
+				}
+				if cfg.opTimeout != tc.wantTimeout {
+					t.Fatalf("opTimeout = %v, want %v", cfg.opTimeout, tc.wantTimeout)
+				}
+			})
+		}
+	})
+
 	t.Run("keychain: trust current application by default", func(t *testing.T) {
 		cfg, err := buildKeyringConfig(BackendKeychain, "codereview", &Options{}, emptyEnv)
 		if err != nil {
@@ -505,7 +585,7 @@ func TestPreflightOSBackend_PassNotOnPath(t *testing.T) {
 func TestPreflightOSBackend_NonPassBackendsSkipPreflight(t *testing.T) {
 	t.Setenv("PATH", "")
 	for _, kind := range []Backend{
-		BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendMemory,
+		BackendKeychain, BackendWinCred, BackendSecretService, BackendFile, BackendOP, BackendOPConnect, BackendOPDesktop, BackendMemory,
 	} {
 		if err := preflightOSBackend(kind); err != nil {
 			t.Errorf("preflightOSBackend(%q) = %v, want nil — non-pass backends must not preflight", kind, err)

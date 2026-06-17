@@ -4,6 +4,7 @@ package credstore
 
 import (
 	"testing"
+	"time"
 
 	"github.com/byteness/keyring"
 )
@@ -59,5 +60,41 @@ func TestBytenessBackendSetPassesThroughMetadata(t *testing.T) {
 	}
 	if !kr.setItem.KeychainNotSynchronizable {
 		t.Fatal("KeychainNotSynchronizable = false, want true")
+	}
+}
+
+func TestKeyringConfigFromBackendConfigForwardsOnePasswordOptions(t *testing.T) {
+	// #nosec G101 -- test fixture values are non-secret placeholders
+	cfg := keyringConfigFromBackendConfig(backendConfig{
+		serviceName:        "codereview",
+		allowedBackend:     BackendOPDesktop,
+		opTimeout:          5 * time.Second,
+		opVaultID:          "vault-123",
+		opItemTitlePrefix:  "cr",
+		opItemTag:          "codereview",
+		opItemFieldTitle:   "credential",
+		opConnectHost:      "https://connect.example",
+		opConnectTokenEnv:  "CUSTOM_OP_CONNECT_TOKEN",
+		opTokenEnv:         "CUSTOM_OP_TOKEN",
+		opDesktopAccountID: "desktop-account",
+	})
+
+	if cfg.ServiceName != "codereview" {
+		t.Fatalf("ServiceName = %q, want %q", cfg.ServiceName, "codereview")
+	}
+	if len(cfg.AllowedBackends) != 1 || cfg.AllowedBackends[0] != keyring.OPDesktopBackend {
+		t.Fatalf("AllowedBackends = %v, want [%v]", cfg.AllowedBackends, keyring.OPDesktopBackend)
+	}
+	if cfg.OPTimeout != 5*time.Second || cfg.OPVaultID != "vault-123" {
+		t.Fatalf("unexpected timeout/vault forwarding: %+v", cfg)
+	}
+	if cfg.OPItemTitlePrefix != "cr" || cfg.OPItemTag != "codereview" || cfg.OPItemFieldTitle != "credential" {
+		t.Fatalf("unexpected item metadata forwarding: %+v", cfg)
+	}
+	if cfg.OPConnectHost != "https://connect.example" || cfg.OPConnectTokenEnv != "CUSTOM_OP_CONNECT_TOKEN" {
+		t.Fatalf("unexpected connect forwarding: %+v", cfg)
+	}
+	if cfg.OPTokenEnv != "CUSTOM_OP_TOKEN" || cfg.OPDesktopAccountID != "desktop-account" {
+		t.Fatalf("unexpected token/account forwarding: %+v", cfg)
 	}
 }

@@ -6,8 +6,9 @@ package credstore
 // <service>/<profile>/<key> -> ServiceName + <profile>/<key> mapping),
 // and §1.5/§1.5.2 (overwrite semantics, allowed-key enforcement).
 //
-// Backends: the in-memory backend (memory.go) and the real OS keyrings
-// (osbackend.go: keychain/wincred/secret-service/file) selected per
+// Backends: the in-memory backend (memory.go) and the real credential
+// backends (osbackend*.go: keychain/wincred/secret-service/file/pass/op)
+// selected per
 // §1.4 (select.go). Selection is fail-closed — an unrecognized backend
 // is an error and memory is never auto-selected, never a silent
 // degradation.
@@ -26,6 +27,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Backend identifies which credential backend a Store is using.
@@ -37,7 +39,17 @@ const (
 	BackendSecretService Backend = "secret-service" // Linux — later unit
 	BackendFile          Backend = "file"           // encrypted file — later unit
 	BackendPass          Backend = "pass"           // pass(1) CLI shell-out; !windows; requires `pass` binary + initialized password-store
+	BackendOP            Backend = "op"             // 1Password service account backend
+	BackendOPConnect     Backend = "op-connect"     // 1Password Connect backend
+	BackendOPDesktop     Backend = "op-desktop"     // 1Password desktop integration backend
 	BackendMemory        Backend = "memory"         // tests/CI, no disk
+)
+
+const (
+	DefaultOnePasswordServiceTokenEnv   = "OP_SERVICE_ACCOUNT_TOKEN" // #nosec G101 -- environment variable name, not a secret
+	DefaultOnePasswordConnectTokenEnv   = "OP_CONNECT_TOKEN"         // #nosec G101 -- environment variable name, not a secret
+	DefaultOnePasswordDesktopAccountEnv = "OP_DESKTOP_ACCOUNT_ID"    // #nosec G101 -- environment variable name, not a secret
+	DefaultOnePasswordTimeout           = 30 * time.Second
 )
 
 // Source describes how the backend was selected.
@@ -73,6 +85,29 @@ type Options struct {
 	// for BackendFile. Nil is fine for headless/CI/tests that set the
 	// env var instead.
 	FilePassphrase func() (string, error)
+	// OnePassword carries non-secret backend-specific wiring for the
+	// 1Password backends. Secrets themselves still come from the backend's
+	// runtime environment or native integration, never from config.
+	OnePassword *OnePasswordOptions
+}
+
+// OnePasswordOptions configures the opt-in 1Password backend families.
+// All fields are non-secret. Blank token env names and backend-specific
+// connection selectors fall back to upstream ByteNess defaults during
+// backend construction. Blank Timeout uses DefaultOnePasswordTimeout for
+// backends that require one. Blank ItemTitlePrefix and ItemTag are
+// scoped to the credstore service name so separate CLI consumers do not
+// collide in the same 1Password vault.
+type OnePasswordOptions struct {
+	Timeout          time.Duration
+	VaultID          string
+	ItemTitlePrefix  string
+	ItemTag          string
+	ItemFieldTitle   string
+	ConnectHost      string
+	ConnectTokenEnv  string
+	ServiceTokenEnv  string
+	DesktopAccountID string
 }
 
 // Sentinels and typed errors. All are matchable via errors.Is.

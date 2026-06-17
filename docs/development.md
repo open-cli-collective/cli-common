@@ -15,7 +15,7 @@ profile** in [`repo-layout.md`](repo-layout.md) §2.1.
 
 | Package | Implements |
 |---|---|
-| `credstore` | OS-keyring credential store — [`working-with-secrets.md`](working-with-secrets.md) §1.3–§1.5, §1.8, §1.12, §2.1 |
+| `credstore` | credential store abstraction — [`working-with-secrets.md`](working-with-secrets.md) §1.3–§1.5, §1.8, §1.12, §2.1 |
 | `statedir` | config/cache/data path resolver — [`working-with-state.md`](working-with-state.md) §6a |
 | `statedirtest` | hermetic test helper (8-var env override) — [`working-with-state.md`](working-with-state.md) §3.1 / §5.3 |
 | `cache` | tier-1 cache core: envelope, atomic write, freshness — [`working-with-state.md`](working-with-state.md) §6b |
@@ -46,8 +46,9 @@ ported consumer is green against the candidate SHA.
 
 ## Keyring opt-out tags
 
-`byteness/keyring` (≥ v1.11.0) supports per-backend opt-out build tags;
-consumer CLIs build with `-tags keyring_no1password,keyring_nopassage` as
-standard configuration, and CI here tests credstore under the same set —
-see [`working-with-secrets.md`](working-with-secrets.md) §1.10 for the
-contract and why `keyring_nofile` / `keyring_nopass` are excluded.
+`byteness/keyring` (≥ v1.11.0) supports per-backend opt-out build tags.
+Consumer CLIs that expose 1Password build with `-tags keyring_nopassage`.
+Consumer CLIs that intentionally skip 1Password support build with
+`-tags keyring_no1password,keyring_nopassage`. CI here tests both sets — see
+[`working-with-secrets.md`](working-with-secrets.md) §1.10 for the dependency
+trade-off and why `keyring_nofile` / `keyring_nopass` are excluded.
