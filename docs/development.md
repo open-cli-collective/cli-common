@@ -15,7 +15,7 @@ profile** in [`repo-layout.md`](repo-layout.md) §2.1.
 
 | Package | Implements |
 |---|---|
-| `credstore` | OS-keyring credential store — [`working-with-secrets.md`](working-with-secrets.md) §1.3–§1.5, §1.8, §1.12, §2.1 |
+| `credstore` | credential store abstraction — [`working-with-secrets.md`](working-with-secrets.md) §1.3–§1.5, §1.8, §1.12, §2.1 |
 | `statedir` | config/cache/data path resolver — [`working-with-state.md`](working-with-state.md) §6a |
 | `statedirtest` | hermetic test helper (8-var env override) — [`working-with-state.md`](working-with-state.md) §3.1 / §5.3 |
 | `cache` | tier-1 cache core: envelope, atomic write, freshness — [`working-with-state.md`](working-with-state.md) §6b |
