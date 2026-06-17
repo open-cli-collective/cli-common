@@ -94,8 +94,9 @@ func TestValidBackendNames_MatchesAllBackends(t *testing.T) {
 
 func TestBackendFlagUsage_NamesEveryBackend(t *testing.T) {
 	usage := BackendFlagUsage()
+	names := backendFlagUsageNames(t, usage)
 	for _, b := range allBackends {
-		if !strings.Contains(usage, string(b)) {
+		if !names[string(b)] {
 			t.Errorf("BackendFlagUsage() missing %q: %q", b, usage)
 		}
 	}
@@ -105,6 +106,23 @@ func TestBackendFlagUsage_NamesEveryBackend(t *testing.T) {
 	if !strings.Contains(usage, "<SERVICE>_KEYRING_BACKEND") {
 		t.Errorf("BackendFlagUsage() should name the env-var equivalent: %q", usage)
 	}
+}
+
+func backendFlagUsageNames(t *testing.T, usage string) map[string]bool {
+	t.Helper()
+	_, after, ok := strings.Cut(usage, "one of: ")
+	if !ok {
+		t.Fatalf("BackendFlagUsage() missing backend list: %q", usage)
+	}
+	list, _, ok := strings.Cut(after, ". Precedence:")
+	if !ok {
+		t.Fatalf("BackendFlagUsage() missing precedence suffix: %q", usage)
+	}
+	names := map[string]bool{}
+	for _, name := range strings.Split(list, ", ") {
+		names[name] = true
+	}
+	return names
 }
 
 func TestBackendEnvVar(t *testing.T) {
@@ -221,15 +239,16 @@ func TestBindBackendFlag_NilOpts(t *testing.T) {
 // downstream go.mod bump.
 func TestBackendFlagUsage_IncludesPass(t *testing.T) {
 	usage := BackendFlagUsage()
-	if !strings.Contains(usage, "pass") {
+	if !backendFlagUsageNames(t, usage)[string(BackendPass)] {
 		t.Errorf("BackendFlagUsage() should mention pass; got %q", usage)
 	}
 }
 
 func TestBackendFlagUsage_IncludesOnePasswordBackends(t *testing.T) {
 	usage := BackendFlagUsage()
-	for _, want := range []string{"op", "op-connect", "op-desktop"} {
-		if !strings.Contains(usage, want) {
+	names := backendFlagUsageNames(t, usage)
+	for _, want := range []Backend{BackendOP, BackendOPConnect, BackendOPDesktop} {
+		if !names[string(want)] {
 			t.Errorf("BackendFlagUsage() should mention %q; got %q", want, usage)
 		}
 	}
