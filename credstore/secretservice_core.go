@@ -80,6 +80,20 @@ func (b *secretServiceBackend) get(itemKey string) (keyringItem, error) {
 	})
 }
 
+func (b *secretServiceBackend) metadata(itemKey string) (keyringItem, error) {
+	if err := b.openCollection(); err != nil {
+		return keyringItem{}, secretServiceNotFoundError(err)
+	}
+	items, err := b.collection.searchItems(itemKey)
+	if err != nil {
+		return keyringItem{}, err
+	}
+	if len(items) == 0 {
+		return keyringItem{}, errKeyringItemNotFound
+	}
+	return keyringItem{key: itemKey}, nil
+}
+
 func (b *secretServiceBackend) set(it keyringItem) error {
 	if err := b.openSecrets(); err != nil {
 		return err

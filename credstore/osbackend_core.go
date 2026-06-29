@@ -17,6 +17,7 @@ import (
 )
 
 var errKeyringItemNotFound = errors.New("credstore: keyring item not found")
+var errKeyringMetadataUnsupported = errors.New("credstore: keyring metadata unsupported")
 
 type promptFunc func(string) (string, error)
 
@@ -31,6 +32,7 @@ type keyringItem struct {
 
 type keyringBackend interface {
 	get(itemKey string) (keyringItem, error)
+	metadata(itemKey string) (keyringItem, error)
 	set(keyringItem) error
 	remove(itemKey string) error
 	keys() ([]string, error)
@@ -285,7 +287,13 @@ func (b *osKeyringBackend) delete(itemKey string) error {
 }
 
 func (b *osKeyringBackend) exists(itemKey string) (bool, error) {
-	if _, err := b.kr.get(itemKey); err != nil {
+	if _, err := b.kr.metadata(itemKey); err != nil {
+		if errors.Is(err, errKeyringMetadataUnsupported) {
+			_, err = b.kr.get(itemKey)
+		}
+		if err == nil {
+			return true, nil
+		}
 		if errors.Is(err, errKeyringItemNotFound) {
 			return false, nil
 		}

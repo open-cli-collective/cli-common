@@ -65,6 +65,30 @@ func (b bytenessBackend) get(itemKey string) (keyringItem, error) {
 	}, nil
 }
 
+func (b bytenessBackend) metadata(itemKey string) (keyringItem, error) {
+	md, err := b.kr.GetMetadata(itemKey)
+	if err != nil {
+		switch {
+		case errors.Is(err, keyring.ErrKeyNotFound):
+			return keyringItem{}, errKeyringItemNotFound
+		case errors.Is(err, keyring.ErrMetadataNotSupported), errors.Is(err, keyring.ErrMetadataNeedsCredentials):
+			return keyringItem{}, errKeyringMetadataUnsupported
+		default:
+			return keyringItem{}, err
+		}
+	}
+	if md.Item == nil {
+		return keyringItem{}, nil
+	}
+	return keyringItem{
+		key:                         md.Key,
+		label:                       md.Label,
+		description:                 md.Description,
+		keychainNotTrustApplication: md.KeychainNotTrustApplication,
+		keychainNotSynchronizable:   md.KeychainNotSynchronizable,
+	}, nil
+}
+
 func (b bytenessBackend) set(it keyringItem) error {
 	return b.kr.Set(keyring.Item{
 		Key:                         it.key,

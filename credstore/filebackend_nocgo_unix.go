@@ -42,6 +42,20 @@ func (b *fileKeyringBackend) get(itemKey string) (keyringItem, error) {
 	return decodeFileKeyringItem(string(bytes), b.password)
 }
 
+func (b *fileKeyringBackend) metadata(itemKey string) (keyringItem, error) {
+	name, err := b.filename(itemKey)
+	if err != nil {
+		return keyringItem{}, err
+	}
+	if _, err := os.Stat(name); err != nil {
+		if os.IsNotExist(err) {
+			return keyringItem{}, errKeyringItemNotFound
+		}
+		return keyringItem{}, err
+	}
+	return keyringItem{key: itemKey}, nil
+}
+
 func (b *fileKeyringBackend) set(it keyringItem) error {
 	if err := b.unlock(); err != nil {
 		return err
