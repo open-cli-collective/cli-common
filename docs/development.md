@@ -23,7 +23,8 @@ profile** in [`repo-layout.md`](repo-layout.md) §2.1.
 ## Build / test
 
 ```sh
-make check   # tidy + lint + test + build — mirrors CI
+make check        # tidy + lint + test + test-scripts + build — mirrors CI
+make test-scripts # run support-script syntax and fixture tests
 ```
 
 Requires Go per the `go` directive in `go.mod` (the single version source,
@@ -34,6 +35,8 @@ Tests MUST be hermetic: use the in-memory credstore backend
 `t.Parallel`-safe — use sequentially). Tests never touch the developer's real
 OS keychain or home directories; that class of leak is exactly what
 `statedirtest` exists to prevent.
+
+Support scripts are documented in [`../scripts/README.md`](../scripts/README.md).
 
 ## Releases
 
