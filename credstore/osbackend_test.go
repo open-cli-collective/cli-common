@@ -313,6 +313,14 @@ func TestOSKeyringBackendExistsFallsBackToGetWhenMetadataUnsupported(t *testing.
 	if !ok {
 		t.Fatal("exists = false, want true")
 	}
+
+	ok, err = b.exists("p/missing")
+	if err != nil {
+		t.Fatalf("exists missing: %v", err)
+	}
+	if ok {
+		t.Fatal("exists missing = true, want false")
+	}
 }
 
 // TestOpenEnvSelectsFileBackend exercises the real
