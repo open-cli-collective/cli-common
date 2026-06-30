@@ -12,6 +12,8 @@ import (
 
 type captureBytenessKeyring struct {
 	setItem                           keyring.Item
+	getRet                            keyring.Item
+	getErr                            error
 	metadataRet                       keyring.Metadata
 	metadataErr                       error
 	getCalls, metadataCalls, setCalls int
@@ -19,7 +21,10 @@ type captureBytenessKeyring struct {
 
 func (c *captureBytenessKeyring) Get(string) (keyring.Item, error) {
 	c.getCalls++
-	return keyring.Item{}, keyring.ErrKeyNotFound
+	if c.getErr != nil {
+		return keyring.Item{}, c.getErr
+	}
+	return c.getRet, nil
 }
 
 func (c *captureBytenessKeyring) GetMetadata(string) (keyring.Metadata, error) {
@@ -107,6 +112,28 @@ func TestBytenessBackendMetadataUsesMetadataOnly(t *testing.T) {
 	}
 	if !it.keychainNotSynchronizable {
 		t.Fatal("keychainNotSynchronizable = false, want true")
+	}
+}
+
+func TestBytenessBackendEmptyMetadataFallsBackForExists(t *testing.T) {
+	kr := &captureBytenessKeyring{getErr: keyring.ErrKeyNotFound}
+	b := &osKeyringBackend{
+		kr:          bytenessBackend{kr: kr},
+		backendKind: BackendPass,
+	}
+
+	ok, err := b.exists("default/git_token")
+	if err != nil {
+		t.Fatalf("exists: %v", err)
+	}
+	if ok {
+		t.Fatal("exists = true, want false")
+	}
+	if kr.metadataCalls != 1 {
+		t.Fatalf("GetMetadata calls = %d, want 1", kr.metadataCalls)
+	}
+	if kr.getCalls != 1 {
+		t.Fatalf("Get calls = %d, want 1", kr.getCalls)
 	}
 }
 

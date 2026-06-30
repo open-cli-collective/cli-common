@@ -78,6 +78,9 @@ func (b bytenessBackend) metadata(itemKey string) (keyringItem, error) {
 		}
 	}
 	if md.Item == nil {
+		if md.ModificationTime.IsZero() {
+			return keyringItem{}, errKeyringMetadataUnsupported
+		}
 		return keyringItem{}, nil
 	}
 	return keyringItem{
