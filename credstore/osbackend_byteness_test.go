@@ -3,6 +3,7 @@
 package credstore
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -10,18 +11,32 @@ import (
 )
 
 type captureBytenessKeyring struct {
-	setItem keyring.Item
+	setItem                           keyring.Item
+	getRet                            keyring.Item
+	getErr                            error
+	metadataRet                       keyring.Metadata
+	metadataErr                       error
+	getCalls, metadataCalls, setCalls int
 }
 
 func (c *captureBytenessKeyring) Get(string) (keyring.Item, error) {
-	return keyring.Item{}, keyring.ErrKeyNotFound
+	c.getCalls++
+	if c.getErr != nil {
+		return keyring.Item{}, c.getErr
+	}
+	return c.getRet, nil
 }
 
 func (c *captureBytenessKeyring) GetMetadata(string) (keyring.Metadata, error) {
-	return keyring.Metadata{}, keyring.ErrMetadataNotSupported
+	c.metadataCalls++
+	if c.metadataErr != nil {
+		return keyring.Metadata{}, c.metadataErr
+	}
+	return c.metadataRet, nil
 }
 
 func (c *captureBytenessKeyring) Set(item keyring.Item) error {
+	c.setCalls++
 	c.setItem = item
 	return nil
 }
@@ -60,6 +75,85 @@ func TestBytenessBackendSetPassesThroughMetadata(t *testing.T) {
 	}
 	if !kr.setItem.KeychainNotSynchronizable {
 		t.Fatal("KeychainNotSynchronizable = false, want true")
+	}
+}
+
+func TestBytenessBackendMetadataUsesMetadataOnly(t *testing.T) {
+	kr := &captureBytenessKeyring{
+		metadataRet: keyring.Metadata{Item: &keyring.Item{
+			Key:                         "default/git_token",
+			Data:                        []byte("secret data must not be copied"),
+			Label:                       "label",
+			Description:                 "description",
+			KeychainNotTrustApplication: true,
+			KeychainNotSynchronizable:   true,
+		}},
+	}
+	be := bytenessBackend{kr: kr}
+
+	it, err := be.metadata("default/git_token")
+	if err != nil {
+		t.Fatalf("metadata: %v", err)
+	}
+	if kr.metadataCalls != 1 {
+		t.Fatalf("GetMetadata calls = %d, want 1", kr.metadataCalls)
+	}
+	if kr.getCalls != 0 {
+		t.Fatalf("Get calls = %d, want 0", kr.getCalls)
+	}
+	if it.key != "default/git_token" || it.label != "label" || it.description != "description" {
+		t.Fatalf("metadata item = %+v", it)
+	}
+	if len(it.data) != 0 {
+		t.Fatalf("metadata copied secret data: %q", string(it.data))
+	}
+	if !it.keychainNotTrustApplication {
+		t.Fatal("keychainNotTrustApplication = false, want true")
+	}
+	if !it.keychainNotSynchronizable {
+		t.Fatal("keychainNotSynchronizable = false, want true")
+	}
+}
+
+func TestBytenessBackendEmptyMetadataFallsBackForExists(t *testing.T) {
+	kr := &captureBytenessKeyring{getErr: keyring.ErrKeyNotFound}
+	b := &osKeyringBackend{
+		kr:          bytenessBackend{kr: kr},
+		backendKind: BackendPass,
+	}
+
+	ok, err := b.exists("default/git_token")
+	if err != nil {
+		t.Fatalf("exists: %v", err)
+	}
+	if ok {
+		t.Fatal("exists = true, want false")
+	}
+	if kr.metadataCalls != 1 {
+		t.Fatalf("GetMetadata calls = %d, want 1", kr.metadataCalls)
+	}
+	if kr.getCalls != 1 {
+		t.Fatalf("Get calls = %d, want 1", kr.getCalls)
+	}
+}
+
+func TestBytenessBackendMetadataErrorMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want error
+	}{
+		{"not found", keyring.ErrKeyNotFound, errKeyringItemNotFound},
+		{"not supported", keyring.ErrMetadataNotSupported, errKeyringMetadataUnsupported},
+		{"needs credentials", keyring.ErrMetadataNeedsCredentials, errKeyringMetadataUnsupported},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			be := bytenessBackend{kr: &captureBytenessKeyring{metadataErr: tc.err}}
+			_, err := be.metadata("default/git_token")
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("metadata err = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }
 

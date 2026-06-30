@@ -170,8 +170,8 @@ func TestFileBackendPassphraseFuncError(t *testing.T) {
 // used to exercise osKeyringBackend's error mapping/wrapping arms
 // deterministically without a real OS keyring.
 type fakeKeyring struct {
-	items                           map[string]keyringItem
-	getErr, setErr, delErr, keysErr error
+	items                                        map[string]keyringItem
+	getErr, metadataErr, setErr, delErr, keysErr error
 }
 
 func newFakeKeyring() *fakeKeyring { return &fakeKeyring{items: map[string]keyringItem{}} }
@@ -184,6 +184,17 @@ func (f *fakeKeyring) get(k string) (keyringItem, error) {
 	if !ok {
 		return keyringItem{}, errKeyringItemNotFound
 	}
+	return it, nil
+}
+func (f *fakeKeyring) metadata(k string) (keyringItem, error) {
+	if f.metadataErr != nil {
+		return keyringItem{}, f.metadataErr
+	}
+	it, ok := f.items[k]
+	if !ok {
+		return keyringItem{}, errKeyringItemNotFound
+	}
+	it.data = nil
 	return it, nil
 }
 func (f *fakeKeyring) set(it keyringItem) error {
@@ -248,7 +259,7 @@ func TestOSKeyringBackendErrorMapping(t *testing.T) {
 		op   string
 	}{
 		{"get", func(b *osKeyringBackend) error { _, e := b.get("p/k"); return e }, func(f *fakeKeyring) { f.getErr = sentinel }, "get"},
-		{"exists", func(b *osKeyringBackend) error { _, e := b.exists("p/k"); return e }, func(f *fakeKeyring) { f.getErr = sentinel }, "exists"},
+		{"exists", func(b *osKeyringBackend) error { _, e := b.exists("p/k"); return e }, func(f *fakeKeyring) { f.metadataErr = sentinel }, "exists"},
 		{"set", func(b *osKeyringBackend) error { return b.set("p/k", "v", true) }, func(f *fakeKeyring) { f.setErr = sentinel }, "set"},
 		// !overwrite + a non-not-found Get error hits the pre-check
 		// default arm (distinct from the overwrite=true write path above).
@@ -271,6 +282,44 @@ func TestOSKeyringBackendErrorMapping(t *testing.T) {
 				t.Fatalf("%s err must name the operation: %v", tc.op, err)
 			}
 		})
+	}
+}
+
+func TestOSKeyringBackendExistsUsesMetadataWhenAvailable(t *testing.T) {
+	f := newFakeKeyring()
+	f.items["p/k"] = keyringItem{key: "p/k", data: []byte("secret"), label: "label", description: "desc"}
+	f.getErr = errors.New("get should not run when metadata succeeds")
+	b := &osKeyringBackend{kr: f, backendKind: BackendKeychain}
+
+	ok, err := b.exists("p/k")
+	if err != nil {
+		t.Fatalf("exists: %v", err)
+	}
+	if !ok {
+		t.Fatal("exists = false, want true")
+	}
+}
+
+func TestOSKeyringBackendExistsFallsBackToGetWhenMetadataUnsupported(t *testing.T) {
+	f := newFakeKeyring()
+	f.items["p/k"] = keyringItem{key: "p/k", data: []byte("secret")}
+	f.metadataErr = errKeyringMetadataUnsupported
+	b := &osKeyringBackend{kr: f, backendKind: BackendFile}
+
+	ok, err := b.exists("p/k")
+	if err != nil {
+		t.Fatalf("exists: %v", err)
+	}
+	if !ok {
+		t.Fatal("exists = false, want true")
+	}
+
+	ok, err = b.exists("p/missing")
+	if err != nil {
+		t.Fatalf("exists missing: %v", err)
+	}
+	if ok {
+		t.Fatal("exists missing = true, want false")
 	}
 }
 

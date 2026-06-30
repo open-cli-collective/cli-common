@@ -68,6 +68,13 @@ func (b *passKeyringBackend) get(itemKey string) (keyringItem, error) {
 	return decodePassItemOutput(output)
 }
 
+func (b *passKeyringBackend) metadata(itemKey string) (keyringItem, error) {
+	if err := b.checkItemExists(itemKey); err != nil {
+		return keyringItem{}, err
+	}
+	return keyringItem{key: itemKey}, nil
+}
+
 func (b *passKeyringBackend) set(it keyringItem) error {
 	bytes, err := json.Marshal(persistedKeyringItem{Key: it.key, Data: it.data})
 	if err != nil {
