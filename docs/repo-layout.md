@@ -201,6 +201,11 @@ defaults (no config file) is non-conformant.
 ### Merge settings
 - **Squash merge only** (no merge commits, no rebase merge). This is why the PR
   title must be a conventional commit (`release.md` §1).
+- Set `squash_merge_commit_title=PR_TITLE` and
+  `squash_merge_commit_message=PR_BODY`. `COMMIT_OR_PR_TITLE` is prohibited:
+  for a one-commit squash PR it can select the lone commit subject instead of
+  the validated PR title and bypass the `pr-title` check. `PR_BODY` keeps the
+  validated PR body as the squash commit body.
 - **Delete branch on merge.**
 
 ---

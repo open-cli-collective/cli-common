@@ -39,11 +39,16 @@ not auto-bump the minor and `fix:` does not auto-bump the patch; both simply
 answer "does this merge ship?" The `MAJOR.MINOR` line is human-controlled in
 `version.txt` and the patch is the CI run number (§2).
 
-Squash-merge (`repo-layout.md` §6) means the **PR title is the commit that lands
-on `main`**, so the PR title MUST be a conventional commit. This is enforced by
-a **CI check on pull requests** (`ci.md` §2) — a local `commit-msg` hook never
-sees the squashed PR title, so the gate has to live in CI. Commit messages MUST
-NOT mention AI tooling (`repo-layout.md` §7).
+With the required squash settings (`squash_merge_commit_title=PR_TITLE` and
+`squash_merge_commit_message=PR_BODY`; see `repo-layout.md` §6), the **PR title
+is the commit subject and the PR body is the body of the commit that lands on
+`main`**. `PR_TITLE` is load-bearing: GitHub's `COMMIT_OR_PR_TITLE` option can
+choose the lone commit subject for a one-commit squash PR, so a conventional
+commit subject can bypass validation of a non-conventional PR title. The PR
+title MUST therefore be a conventional commit. This is enforced by a **CI
+check on pull requests** (`ci.md` §2) — a local `commit-msg` hook never sees the
+squashed PR title, so the gate has to live in CI. Commit messages MUST NOT
+mention AI tooling (`repo-layout.md` §7).
 
 ### §1.1 The shared commit grammar
 
