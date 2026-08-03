@@ -201,6 +201,11 @@ defaults (no config file) is non-conformant.
 ### Merge settings
 - **Squash merge only** (no merge commits, no rebase merge). This is why the PR
   title must be a conventional commit (`release.md` §1).
+- Set `squash_merge_commit_title=PR_TITLE` and
+  `squash_merge_commit_message=PR_BODY`. `COMMIT_OR_PR_TITLE` is prohibited:
+  for a one-commit squash PR it can select the lone commit subject instead of
+  the validated PR title and bypass the `pr-title` check. `PR_BODY` keeps the
+  validated PR body as the squash commit body.
 - **Delete branch on merge.**
 
 ---
@@ -211,12 +216,10 @@ defaults (no config file) is non-conformant.
 - Commit messages MUST NOT mention AI tooling (Claude, Anthropic, ChatGPT,
   Copilot, etc.). Enforce with a `commit-msg` hook that greps a blocklist and
   rejects on match. The hook alone is insufficient under squash merge: the
-  landing commit is built from the PR title plus, depending on the
-  squash-message setting, either the PR description or the branch's commit
-  messages — and the local hook sees only the last of those. The CI
-  `pr-title` check therefore greps the PR title and body against the same
-  blocklist (`ci.md` §2); between the two enforcement points every
-  squash-message mode is covered. Reference implementation (track it as
+  required `PR_TITLE` / `PR_BODY` settings build the landing commit from the PR
+  title and body, neither of which the local hook sees. The CI `pr-title` check
+  therefore greps both against the same blocklist (`ci.md` §2). Reference
+  implementation (track it as
   `scripts/hooks/commit-msg` and wire via `git config core.hooksPath scripts/hooks`):
 
   ```sh
