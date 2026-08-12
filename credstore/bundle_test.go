@@ -61,6 +61,42 @@ func TestListBundleClosed(t *testing.T) {
 	}
 }
 
+func TestListProfiles(t *testing.T) {
+	s := openMem(t)
+	if got, err := s.ListProfiles(); err != nil || got != nil {
+		t.Fatalf("ListProfiles(empty store) = (%v,%v), want (nil,nil)", got, err)
+	}
+
+	mustSet(t, s, "work", "oauth_token", "1")
+	mustSet(t, s, "default", "oauth_token", "2")
+	mustSet(t, s, "default", "second_key", "3") // dedupe: two keys, one profile
+	got, err := s.ListProfiles()
+	if err != nil {
+		t.Fatalf("ListProfiles: %v", err)
+	}
+	eqStrings(t, "ListProfiles", got, []string{"default", "work"})
+
+	// Not allowlist-gated: a profile whose only key was stored directly
+	// (legacy / another tool run) is still reported — stored reality.
+	if err := memOf(t, s).set("legacy/legacy_key", "x", false); err != nil {
+		t.Fatalf("seed legacy profile: %v", err)
+	}
+	// A malformed item key with no separator is ignored, not a profile.
+	if err := memOf(t, s).set("noslash", "x", false); err != nil {
+		t.Fatalf("seed malformed key: %v", err)
+	}
+	got, _ = s.ListProfiles()
+	eqStrings(t, "ListProfiles after legacy", got, []string{"default", "legacy", "work"})
+}
+
+func TestListProfilesClosed(t *testing.T) {
+	s, _ := Open("svc", &Options{Backend: BackendMemory})
+	_ = s.Close()
+	if _, err := s.ListProfiles(); !errors.Is(err, ErrStoreClosed) {
+		t.Fatalf("ListProfiles after Close = %v, want ErrStoreClosed", err)
+	}
+}
+
 func TestDeleteBundle(t *testing.T) {
 	s := openMem(t)
 	if _, err := s.DeleteBundle(""); !errors.Is(err, ErrRefEmpty) {

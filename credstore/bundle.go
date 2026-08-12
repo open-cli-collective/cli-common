@@ -84,6 +84,42 @@ func (s *Store) ListBundle(profile string) ([]string, error) {
 	return s.bundleBareKeys(profile)
 }
 
+// ListProfiles returns the sorted distinct profiles that have at least one
+// stored key under this service. Like ListBundle it is not allowlist-gated —
+// it reports stored reality (§1.5.2 gates writes/deletes, not reads). A
+// service with no stored items returns (nil, nil). It exists so a CLI can
+// offer a "profiles list" affordance without shelling out to OS keyring
+// tools: the profile segment is not secret (§1.12), and discovering which
+// profiles exist must not require dumping the keychain by hand. An item key
+// with no '/' separator (never written by this package) is ignored rather
+// than surfaced as a phantom profile.
+func (s *Store) ListProfiles() ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, ErrStoreClosed
+	}
+	all, err := s.be.listKeys()
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	var profiles []string
+	for _, ik := range all {
+		profile, _, found := strings.Cut(ik, "/")
+		if !found || profile == "" {
+			continue
+		}
+		if _, dup := seen[profile]; dup {
+			continue
+		}
+		seen[profile] = struct{}{}
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+	return profiles, nil
+}
+
 // DeleteBundle removes every key under profile (config clear, §1.7). It
 // is idempotent (a valid profile with no keys → (nil, nil)) and not
 // allowlist-gated. It does not fail-fast: every key is attempted; if any
