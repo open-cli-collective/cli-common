@@ -1,8 +1,8 @@
-.PHONY: check tidy lint test build
+.PHONY: check tidy lint test test-scripts build
 
 # CI gate: everything that must pass before merge (repo-layout.md §2.1 —
 # check mirrors CI, including the build step).
-check: tidy lint test build
+check: tidy lint test test-scripts build
 
 # Tidy and verify the module is clean. Catches both modified tracked and
 # newly-generated untracked go.mod/go.sum (the latter once deps are added).
@@ -16,6 +16,10 @@ lint:
 
 test:
 	go test -race ./...
+
+test-scripts:
+	bash -n scripts/repair-macos-keychain-credentials.sh
+	scripts/repair-macos-keychain-credentials.sh --self-test
 
 build:
 	go build ./...
