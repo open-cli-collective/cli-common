@@ -424,6 +424,53 @@ The nfpm `package_name` and the dispatch `package` key MUST match the manifest's
 `packages.linux.package_name` — a mismatch routes packages under the wrong name
 in `linux-packages`.
 
+### §8.4 Several binaries from one release
+
+A repo that ships more than one binary from **one module, one goreleaser config and
+one tag stream** (`google-cli` ships `gro` and `grw` as `v1.2.N`) declares them in
+a single manifest with `binaries:` instead of `binary:`. `repo`, `goreleaser_config`,
+`version_file` and `tag` stay top-level; everything that is per-binary
+(`archives`, `packages`, `keychain_probe`) moves under each entry:
+
+```yaml
+schema: open-cli-identity/v1
+repo: google-cli
+goreleaser_config: .goreleaser.yaml
+version_file: version.txt
+tag: { prefix: v, version_scheme: major_minor_run_patch }
+binaries:
+  - name: gro
+    archives: { name_template: "gro_v{{ .Version }}_{{ .Os }}_{{ .Arch }}" }
+    packages:
+      homebrew: { canonical_cask: gro, alias_casks: [google-readonly] }
+      winget: { id: OpenCLICollective.google-readonly }
+      chocolatey: { id: google-readonly }
+      linux: { package_name: google-readonly }
+    keychain_probe: { ... }
+  - name: grw
+    archives: { name_template: "grw_v{{ .Version }}_{{ .Os }}_{{ .Arch }}" }
+    packages: { ... }
+```
+
+A manifest declares exactly one of `binary:` or `binaries:`; `identity-check`
+normalizes both to a `binaries` list for the workflows. The per-binary rules:
+
+- Every goreleaser build sets `id:` and `binary:`. Each `archives[]`, `nfpms[]`
+  and `homebrew_casks[]` entry must select **one** binary's builds/archives via
+  `ids:`; an unfiltered entry (fine for a single binary) is a drift error here.
+  Templates, package names and cask names are checked against the owning binary.
+- Chocolatey packages nest per id: `packaging/chocolatey/<id>/<id>.nuspec` and
+  `packaging/chocolatey/<id>/tools/`. winget manifests stay in `packaging/winget/`
+  (they are id-named already).
+- `release.yml` builds once, then runs each channel (homebrew, chocolatey, winget,
+  linux-packages) as a matrix over the binaries that declare it, resolving each
+  binary's Windows archives from `dist/artifacts.json`; the darwin gate and the
+  code-signing identifier (`org.open-cli-collective.<name>`) run per binary.
+
+This is distinct from §8.3: a monorepo of independently versioned tools keeps one
+manifest per tool and prefixed tags; `binaries:` is for binaries that always ship
+together under one version.
+
 ---
 
 ## §9 Consuming the reusable workflow
