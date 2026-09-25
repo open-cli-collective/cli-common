@@ -5,6 +5,7 @@ package credstore
 import (
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/byteness/keyring"
 )
@@ -15,7 +16,11 @@ func openKeyringBackend(kind Backend, cfg backendConfig) (keyringBackend, error)
 	if err != nil {
 		return nil, fmt.Errorf("keyring open %s: %w", kind, err)
 	}
-	return bytenessBackend{kr: kr}, nil
+	backend := bytenessBackend{kr: kr}
+	if kind == BackendKeychain && runtime.GOOS == "darwin" {
+		return keychainStableReadBackend{keyringBackend: backend, service: cfg.serviceName, read: readKeychainPassword}, nil
+	}
+	return backend, nil
 }
 
 func keyringConfigFromBackendConfig(cfg backendConfig) keyring.Config {
