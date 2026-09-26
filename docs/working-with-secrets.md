@@ -51,7 +51,7 @@ The standard is a *better default*, not a security boundary. It removes the most
 
 All Collective CLIs use **`github.com/byteness/keyring`** as the credential-store abstraction. (Migrated from `github.com/99designs/keyring` in #23 — ByteNess is an active fork that picks up CVE fixes and ongoing maintenance.)
 
-- macOS → Keychain (Security framework, no shelling out).
+- macOS → Keychain (native writes, metadata, enumeration, and deletion; secret reads use the fixed system `/usr/bin/security` executable so Keychain grants can survive CLI rebuilds). Normal CLI credential writes use the native backend; never pass a secret on a command line or use `security -i` for those writes. The dedicated [`repair-macos-keychain-credentials.sh`](../scripts/repair-macos-keychain-credentials.sh) script uses `security -i` only to recreate existing items with repaired ACLs.
 - Windows → Credential Manager (`wincred`).
 - Linux → Secret Service (D-Bus), then file fallback (see §1.4).
 - A shared internal package, `cli-common/credstore`, wraps the library so every CLI uses the same backend priority, error messages, and config layout. CLIs do not depend on `byteness/keyring` directly.
@@ -138,6 +138,8 @@ deterministic user-facing label and description derived from the same mapping:
 application by default (`KeychainTrustApplication` / implied self). Existing
 items are not migrated in place: if an older item has blank metadata or older
 ACL state, it keeps that state until the CLI rewrites or overwrites it.
+The stable read path retains the same service/account mapping and strips only
+the terminal newline printed by `security -w`; it does not change stored items.
 
 Because `/` is structural in this mapping, **`/` is forbidden inside any segment.** Allowed characters within `service`, `profile`, and `key` are `[A-Za-z0-9_-]`. The shared package rejects anything else at write time with a clear error. CLIs that need a richer identifier (e.g. an email address as a profile) must escape it; the shared package provides helpers.
 
