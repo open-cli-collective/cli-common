@@ -84,13 +84,7 @@ literal content hash — so every `brew upgrade` produces a new hash, the DR no 
 matches, and the user is re-prompted. Any CLI whose `keychain_probe` (§8) selects the
 macOS Keychain backend has this problem.
 
-`credstore` now reads Keychain secrets through the fixed, system-signed
-`/usr/bin/security` executable while retaining native writes and management.
-That reduces rebuild prompts for consumers that adopt this version of the
-library; release signing remains required for direct Keychain users and for
-other native accesses by a CLI. A newly trusted helper may require one grant
-per existing item. Do not interpret the helper as a reason to remove signing
-or to rewrite credentials with `security -i`.
+`credstore` reads Keychain secrets through the fixed, system-signed `/usr/bin/security` executable while retaining native writes and management. That reduces rebuild prompts for consumers that adopt this version of the library; release signing remains required for direct Keychain users and for other native accesses by a CLI. A newly trusted helper may require one grant per existing item. Normal CLI operation must not rewrite credentials with `security -i`; the dedicated [`repair-macos-keychain-credentials.sh`](../scripts/repair-macos-keychain-credentials.sh) script uses it only when repairing an existing item's ACL.
 
 **Standard: sign every darwin binary at release time with the family's single
 self-signed code-signing cert and a constant per-tool identifier.** That makes the DR
