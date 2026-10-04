@@ -18,7 +18,7 @@ Companion pillars:
   §2 CGO gate load-bearing.
 
 **The kept channels:** macOS Homebrew (cask), Windows winget, Windows
-chocolatey, Linux apt/`.deb`, Linux rpm. **Snap is being decommissioned (§7).**
+chocolatey, Linux apt/`.deb`, Linux rpm, and Arch Linux/pacman. **Snap is being decommissioned (§7).**
 
 ---
 
@@ -201,7 +201,7 @@ checks verbatim rather than re-deriving them.
 
 ---
 
-## §5 Linux — apt/`.deb` and rpm via `linux-packages`
+## §5 Linux — apt/`.deb`, rpm, and Arch/pacman via `linux-packages`
 
 This channel is **live and automated** — verified 2026-05-29: the shared repo
 holds signed packages for `slck`, `jtk`, `cfl`, `sfdc`, and `google-readonly`
@@ -209,7 +209,7 @@ holds signed packages for `slck`, `jtk`, `cfl`, `sfdc`, and `google-readonly`
 divergence, §10), plus `nrq` / `hspt` by config.
 
 ### §5.1 Package generation (nfpms)
-goreleaser's `nfpms` block builds `.deb` and `.rpm`. Standard shape:
+goreleaser's `nfpms` block builds `.deb`, `.rpm`, and `.pkg.tar.zst`. Standard shape:
 
 ```yaml
 nfpms:
@@ -218,12 +218,37 @@ nfpms:
     maintainer: Open CLI Collective <https://github.com/open-cli-collective>
     description: <one line>
     license: MIT
-    formats: [deb, rpm]
+    formats: [deb, rpm, archlinux]
+    mtime: "{{ .CommitDate }}"
     bindir: /usr/bin
     contents:
       - src: LICENSE
         dst: /usr/share/licenses/<binary>/LICENSE
 ```
+
+### Arch Linux / Omarchy
+
+Omarchy uses Arch's pacman package manager. Publish native `.pkg.tar.zst`
+packages through the existing `linux-packages` repository, with the same
+`package-release` dispatch used for APT/RPM. Its receiver reads `.PKGINFO`,
+places packages under `arch/x86_64` or `arch/aarch64`, signs each package and
+repository database, and deploys the result through GitHub Pages.
+
+Use `archlinux` in every Go CLI's nFPM formats. Preserve each manifest's Linux
+package name, including the existing Google and Spotify names; executable names
+remain unchanged. Users enroll the signing key and repository once using the
+[repository instructions](https://github.com/open-cli-collective/linux-packages#arch-linux-pacman),
+then install with `pacman -Syu <package>` and update with `pacman -Syu`.
+The AUR is an optional discovery channel; it is not required for this binary
+repository. Retune's Tauri pipeline packages the same validated Linux payload
+with explicit Arch desktop dependencies before using the same receiver.
+
+Use whole-second package timestamps (`mtime: "{{ .CommitDate }}"` in
+GoReleaser) so tar entries and pacman MTREE integrity metadata agree. Validate
+both architectures and exercise installation, file ownership/integrity,
+uninstall, and reinstall in a clean Arch container. Packaging config changes
+must be included in automatic-release path gates so packaging-only fixes ship;
+monorepos must include each tool’s config in both release and tool path scopes.
 
 ### §5.2 The dispatch contract
 `release.yml` has a `linux-packages` job that hands the built packages off to
