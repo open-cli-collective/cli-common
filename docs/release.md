@@ -114,10 +114,13 @@ release paths.
 to mint a tag. **Both gates must pass** — this is what keeps doc-only and
 CI-only merges from cutting pointless releases:
 
-1. **Path gate** — the merge touched `**.go`, `go.mod`, `go.sum`, **or
-   `version.txt`** (the last so a deliberate `MAJOR.MINOR` bump ships, per §2 —
-   current repos omit it, §7). A change to only `README.md`, workflows, or docs
-   does not release.
+1. **Path gate** — the merge touched `**.go`, `go.mod`, `go.sum`,
+   `version.txt`, or the CLI's GoReleaser configuration (`.goreleaser.yml`,
+   `.goreleaser.yaml`, or its tool-specific config). Version-only bumps and
+   packaging-only fixes must ship. Include executable packaging scripts and
+   release workflow paths when they determine published payloads, as in Retune.
+   Changes confined to README files, documentation, or unrelated CI workflows
+   do not release.
 2. **Commit gate** — the landed commit is `feat:` or `fix:` (§1).
 
 On pass, the workflow:
@@ -191,7 +194,9 @@ Releases will partially fail; the standard requires they be recoverable:
 same machinery **per tool**:
 
 - Separate `auto-release-cfl.yml` / `auto-release-jtk.yml`, each with the §3
-  path gate scoped to that tool's subtree (`tools/<tool>/**`, plus `shared/**`).
+  path gate scoped to that tool's subtree (`tools/<tool>/**`, plus `shared/**`)
+  and its root packaging config (`.goreleaser-<tool>.yml`). Include the config
+  in both `release-paths` and `tool-paths`; matching just one gate is insufficient.
 - Tool-prefixed tags: `cfl-v<MAJOR.MINOR>.<run>`, `jtk-v<MAJOR.MINOR>.<run>`
   (e.g. `cfl-v0.9.150`). Per-tool `version.txt` lives at the tool root.
 - Separate `release-<tool>.yml` triggered on the matching tag prefix. Because
@@ -233,8 +238,8 @@ jobs:
     with:
       tag-prefix: v                              # 'cfl-v' / 'jtk-v' for monorepo tools
       version-file: version.txt
-      release-paths: "**.go,go.mod,go.sum,version.txt"  # §3 path gate (incl. version.txt, §2)
-      tool-paths: ""                             # monorepo: 'tools/cfl/**,shared/**'
+      release-paths: "**.go,go.mod,go.sum,version.txt,.goreleaser.yml"  # §3; use the actual config name
+      tool-paths: ""                             # monorepo: 'tools/cfl/**,shared/**,.goreleaser-cfl.yml'
     secrets:
       tag-token: ${{ secrets.RELEASE_TAG_TOKEN }}   # §3.1 — or a GitHub App token
 ```
