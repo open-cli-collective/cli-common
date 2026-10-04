@@ -247,7 +247,7 @@ Use whole-second package timestamps (`mtime: "{{ .CommitDate }}"` in
 GoReleaser) so tar entries and pacman MTREE integrity metadata agree. Validate
 both architectures and exercise installation, file ownership/integrity,
 uninstall, and reinstall in a clean Arch container. Packaging config changes
-must be included in automatic-release path gates so packaging-only fixes ship;
+must be included in automatic-release path gates per [release.md §3](release.md#3-the-dual-gate-auto-release) so packaging-only fixes ship;
 monorepos must include each tool’s config in both release and tool path scopes.
 
 ### §5.2 The dispatch contract
