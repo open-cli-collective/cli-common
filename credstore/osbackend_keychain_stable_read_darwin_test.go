@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,6 +94,7 @@ func TestRepairScriptKeepsSecretBytes(t *testing.T) {
 		{"trailing newline", "tok\n"},
 		{"utf-8", "p\xc3\xa4ss"},
 		{"invalid utf-8", "\xff\xfe"},
+		{"long secret that fits one line", strings.Repeat("k", 1800)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			addSecret(t, keychain, service, tc.name, tc.secret)
@@ -107,6 +109,31 @@ func TestRepairScriptKeepsSecretBytes(t *testing.T) {
 		})
 	}
 
+	t.Run("refuses a secret too long for one line and leaves the item", func(t *testing.T) {
+		secret := strings.Repeat("k", 3000)
+		addSecret(t, keychain, service, "too long", secret)
+		out, err := runRepairItem(keychain, service, "too long")
+		if err == nil || !bytes.Contains(out, []byte("too long to recreate")) {
+			t.Fatalf("repair_item error = %v, want the over-limit refusal:\n%s", err, out)
+		}
+		if got := readFromKeychain(t, keychain, service, "too long"); string(got) != secret {
+			t.Fatalf("after refusal read %d bytes, want the original %d", len(got), len(secret))
+		}
+	})
+
+	t.Run("restores the value when the recreated item differs", func(t *testing.T) {
+		const secret = "original-value"
+		addSecret(t, keychain, service, "corrupted recreate", secret)
+		marker := filepath.Join(t.TempDir(), "corrupted")
+		out, err := runRepairItem(keychain, service, "corrupted recreate", "PROBE_CORRUPT_ONCE_MARKER="+marker)
+		if err == nil || !bytes.Contains(out, []byte("attempting restore")) || bytes.Contains(out, []byte("restore failed")) {
+			t.Fatalf("repair_item error = %v, want a reported and successful restore:\n%s", err, out)
+		}
+		if got := readFromKeychain(t, keychain, service, "corrupted recreate"); string(got) != secret {
+			t.Fatalf("after restore read %q, want %q", got, secret)
+		}
+	})
+
 	t.Run("refuses an empty secret and leaves the item", func(t *testing.T) {
 		runSecurityTool(t, "add-generic-password", "-s", service, "-a", "empty", "-w", "", "-T", "/usr/bin/security", keychain)
 		if out, err := runRepairItem(keychain, service, "empty"); err == nil {
@@ -118,18 +145,31 @@ func TestRepairScriptKeepsSecretBytes(t *testing.T) {
 	})
 }
 
-func runRepairItem(keychain, service, account string) ([]byte, error) {
+func runRepairItem(keychain, service, account string, extraEnv ...string) ([]byte, error) {
 	const driver = `
 source "$REPAIR_SCRIPT"
 apply=1
+# security -i drops the end of an over-long line, which would lose the keychain
+# path and write to the user's default keychain, so such a line stops here.
 security() {
   if [[ "$1" == "-i" ]]; then
-    sed 's|$| "'"$PROBE_KEYCHAIN"'"|' | command security -i
+    local line
+    IFS= read -r line
+    if ((${#line} > 4000)); then
+      echo "over-long line reached security -i" >&2
+      exit 99
+    fi
+    # Simulates security -i storing the wrong value on its first call.
+    if [[ -n "${PROBE_CORRUPT_ONCE_MARKER:-}" && ! -e "$PROBE_CORRUPT_ONCE_MARKER" ]]; then
+      : >"$PROBE_CORRUPT_ONCE_MARKER"
+      line="${line% -X *} -X 6261"
+    fi
+    printf '%s "%s"\n' "$line" "$PROBE_KEYCHAIN" | command security -i
   else
     command security "$@" "$PROBE_KEYCHAIN"
   fi
 }
-repair_item probe "$PROBE_SERVICE" "$PROBE_ACCOUNT" /usr/bin/security
+repair_item probe "$PROBE_SERVICE" "$PROBE_ACCOUNT" /usr/bin/true
 `
 	cmd := exec.Command("/bin/bash", "-c", driver)
 	cmd.Env = append(cmd.Environ(),
@@ -138,6 +178,7 @@ repair_item probe "$PROBE_SERVICE" "$PROBE_ACCOUNT" /usr/bin/security
 		"PROBE_SERVICE="+service,
 		"PROBE_ACCOUNT="+account,
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	return cmd.CombinedOutput()
 }
 

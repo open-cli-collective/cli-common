@@ -16,12 +16,21 @@ What apply does for each present Keychain item:
   2. deletes the old item
   3. recreates it with label "<service> <profile>/<key>"
   4. adds explicit trusted application paths for the relevant installed CLI(s)
+     and for /usr/bin/security, which credstore reads secrets through
+  5. reads the recreated item back and compares it with the original value
+
+A secret too long to fit one `security -i` line (about 1.9 KB) is refused and the
+item is left unchanged.
 
 Secret values are never printed and are not passed as process arguments.
 USAGE
 }
 
 apply=0
+
+# `security -i` splits input lines near 4096 characters, so a longer line would
+# store a truncated secret after the delete has removed the original.
+max_interactive_line=4000
 
 to_hex() {
   if command -v xxd >/dev/null 2>&1; then
@@ -284,11 +293,6 @@ repair_item() {
   label="${service} ${account}"
   comment="Credential for ${service} ${account}"
 
-  if ! security delete-generic-password -s "$service" -a "$account" >/dev/null 2>&1; then
-    echo "ERROR $name ($service/$account): failed to delete old item" >&2
-    return 1
-  fi
-
   cmd="add-generic-password -s $(security_quote "$service") -a $(security_quote "$account")"
   cmd+=" -l $(security_quote "$label") -j $(security_quote "$comment") -D \"application password\" -U"
   local i=0
@@ -296,9 +300,19 @@ repair_item() {
     cmd+=" ${app_args[$i]} $(security_quote "${app_args[$((i + 1))]}")"
     i=$((i + 2))
   done
-  cmd+=" -X ${hex}"
+  cmd+=" -T \"/usr/bin/security\" -X ${hex}"
 
-  if ! printf '%s\n' "$cmd" | security -i >/dev/null; then
+  if ((${#cmd} > max_interactive_line)); then
+    echo "ERROR $name ($service/$account): secret is too long to recreate through security -i; item left unchanged" >&2
+    return 1
+  fi
+
+  if ! security delete-generic-password -s "$service" -a "$account" >/dev/null 2>&1; then
+    echo "ERROR $name ($service/$account): failed to delete old item" >&2
+    return 1
+  fi
+
+  if ! printf '%s\n' "$cmd" | security -i >/dev/null || [[ "$(read_secret_hex "$service" "$account")" != "$hex" ]]; then
     echo "ERROR $name ($service/$account): recreate failed; attempting restore without target app ACL" >&2
     printf 'add-generic-password -s %s -a %s -l %s -j %s -D "application password" -U -X %s\n' \
       "$(security_quote "$service")" \
@@ -306,6 +320,9 @@ repair_item() {
       "$(security_quote "$label")" \
       "$(security_quote "$comment")" \
       "$hex" | security -i >/dev/null || true
+    if [[ "$(read_secret_hex "$service" "$account")" != "$hex" ]]; then
+      echo "ERROR $name ($service/$account): restore failed; the stored value does not match the original" >&2
+    fi
     return 1
   fi
 
