@@ -20,19 +20,7 @@ import (
 func TestStableKeychainReadRoundTripsBytesThroughRealSecurity(t *testing.T) {
 	const service = "credstore-read-probe"
 	keychain := filepath.Join(t.TempDir(), "probe.keychain-db")
-	security := func(args ...string) {
-		t.Helper()
-		// #nosec G204 -- fixed executable and test-controlled synthetic arguments.
-		if out, err := exec.Command("/usr/bin/security", args...).CombinedOutput(); err != nil {
-			t.Fatalf("security %s: %v\n%s", args[0], err, out)
-		}
-	}
-	security("create-keychain", "-p", "probe", keychain)
-	t.Cleanup(func() {
-		// #nosec G204 -- fixed executable and test-owned path.
-		_ = exec.Command("/usr/bin/security", "delete-keychain", keychain).Run()
-	})
-	security("set-keychain-settings", keychain)
+	newThrowawayKeychain(t, keychain)
 
 	for _, tc := range []struct {
 		name   string
@@ -58,7 +46,7 @@ func TestStableKeychainReadRoundTripsBytesThroughRealSecurity(t *testing.T) {
 		{"repeats the password prefix", "x\npassword: \"y\" "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			security("add-generic-password", "-s", service, "-a", tc.name, "-X", hex.EncodeToString([]byte(tc.secret)), "-T", "/usr/bin/security", keychain)
+			addSecret(t, keychain, service, tc.name, tc.secret)
 			got := readFromKeychain(t, keychain, service, tc.name)
 			if !bytes.Equal(got, []byte(tc.secret)) {
 				t.Fatalf("read %q, want %q", got, tc.secret)
@@ -67,7 +55,7 @@ func TestStableKeychainReadRoundTripsBytesThroughRealSecurity(t *testing.T) {
 	}
 
 	t.Run("empty", func(t *testing.T) {
-		security("add-generic-password", "-s", service, "-a", "empty", "-w", "", "-T", "/usr/bin/security", keychain)
+		runSecurityTool(t, "add-generic-password", "-s", service, "-a", "empty", "-w", "", "-T", "/usr/bin/security", keychain)
 		if got := readFromKeychain(t, keychain, service, "empty"); len(got) != 0 {
 			t.Fatalf("read %q, want empty", got)
 		}
@@ -81,6 +69,99 @@ func TestStableKeychainReadRoundTripsBytesThroughRealSecurity(t *testing.T) {
 			t.Fatalf("read error = %v, want %v", err, errKeyringItemNotFound)
 		}
 	})
+}
+
+// TestRepairScriptKeepsSecretBytes runs the repair script's delete-and-recreate
+// step against a throwaway keychain. Every `security` call the script makes is
+// scoped to that keychain, and the recreated items trust /usr/bin/security, so no
+// real keychain is touched and no dialog appears.
+func TestRepairScriptKeepsSecretBytes(t *testing.T) {
+	const service = "credstore-repair-probe"
+	keychain := filepath.Join(t.TempDir(), "probe.keychain-db")
+	newThrowawayKeychain(t, keychain)
+
+	for _, tc := range []struct {
+		name   string
+		secret string
+	}{
+		{"printable", "abc123"},
+		{"hex digits", "deadbeef"},
+		{"double quotes", `a"b"`},
+		{"backslash", `a\b`},
+		{"trailing space", "a b "},
+		{"pem shape", "-----BEGIN KEY-----\nabc\n-----END KEY-----\n"},
+		{"trailing newline", "tok\n"},
+		{"utf-8", "p\xc3\xa4ss"},
+		{"invalid utf-8", "\xff\xfe"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addSecret(t, keychain, service, tc.name, tc.secret)
+			if out, err := runRepairItem(keychain, service, tc.name); err != nil {
+				t.Fatalf("repair_item: %v\n%s", err, out)
+			} else if !bytes.Contains(out, []byte("REPAIRED")) {
+				t.Fatalf("repair_item did not repair:\n%s", out)
+			}
+			if got := readFromKeychain(t, keychain, service, tc.name); !bytes.Equal(got, []byte(tc.secret)) {
+				t.Fatalf("after repair read %q, want %q", got, tc.secret)
+			}
+		})
+	}
+
+	t.Run("refuses an empty secret and leaves the item", func(t *testing.T) {
+		runSecurityTool(t, "add-generic-password", "-s", service, "-a", "empty", "-w", "", "-T", "/usr/bin/security", keychain)
+		if out, err := runRepairItem(keychain, service, "empty"); err == nil {
+			t.Fatalf("repair_item succeeded on an empty secret:\n%s", out)
+		}
+		if got := readFromKeychain(t, keychain, service, "empty"); len(got) != 0 {
+			t.Fatalf("read %q, want empty", got)
+		}
+	})
+}
+
+func runRepairItem(keychain, service, account string) ([]byte, error) {
+	const driver = `
+source "$REPAIR_SCRIPT"
+apply=1
+security() {
+  if [[ "$1" == "-i" ]]; then
+    sed 's|$| "'"$PROBE_KEYCHAIN"'"|' | command security -i
+  else
+    command security "$@" "$PROBE_KEYCHAIN"
+  fi
+}
+repair_item probe "$PROBE_SERVICE" "$PROBE_ACCOUNT" /usr/bin/security
+`
+	cmd := exec.Command("/bin/bash", "-c", driver)
+	cmd.Env = append(cmd.Environ(),
+		"REPAIR_SCRIPT=../scripts/repair-macos-keychain-credentials.sh",
+		"PROBE_KEYCHAIN="+keychain,
+		"PROBE_SERVICE="+service,
+		"PROBE_ACCOUNT="+account,
+	)
+	return cmd.CombinedOutput()
+}
+
+func newThrowawayKeychain(t *testing.T, keychain string) {
+	t.Helper()
+	runSecurityTool(t, "create-keychain", "-p", "probe", keychain)
+	t.Cleanup(func() {
+		// #nosec G204 -- fixed executable and test-owned path.
+		_ = exec.Command("/usr/bin/security", "delete-keychain", keychain).Run()
+	})
+	runSecurityTool(t, "set-keychain-settings", keychain)
+}
+
+func addSecret(t *testing.T, keychain, service, account, secret string) {
+	t.Helper()
+	runSecurityTool(t, "add-generic-password", "-s", service, "-a", account, "-X", hex.EncodeToString([]byte(secret)), "-T", "/usr/bin/security", keychain)
+}
+
+func runSecurityTool(t *testing.T, args ...string) {
+	t.Helper()
+	// #nosec G204 -- fixed executable and test-controlled synthetic arguments.
+	if out, err := exec.Command("/usr/bin/security", args...).CombinedOutput(); err != nil {
+		t.Fatalf("security %s: %v\n%s", args[0], err, out)
+	}
 }
 
 func readFromKeychain(t *testing.T, keychain, service, account string) []byte {

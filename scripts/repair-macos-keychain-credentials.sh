@@ -12,7 +12,7 @@ Apply changes:
   scripts/repair-macos-keychain-credentials.sh --apply
 
 What apply does for each present Keychain item:
-  1. reads the existing secret value with `security find-generic-password -w`
+  1. reads the existing secret value with `security find-generic-password -g`
   2. deletes the old item
   3. recreates it with label "<service> <profile>/<key>"
   4. adds explicit trusted application paths for the relevant installed CLI(s)
@@ -21,34 +21,7 @@ Secret values are never printed and are not passed as process arguments.
 USAGE
 }
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "This repair script is macOS-only." >&2
-  exit 1
-fi
-
 apply=0
-while (($#)); do
-  case "$1" in
-    --apply)
-      apply=1
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "unknown argument: $1" >&2
-      usage >&2
-      exit 2
-      ;;
-  esac
-  shift
-done
-
-if ! command -v security >/dev/null 2>&1; then
-  echo "missing required command: security" >&2
-  exit 1
-fi
 
 to_hex() {
   if command -v xxd >/dev/null 2>&1; then
@@ -208,6 +181,42 @@ keychain_item_exists() {
   security find-generic-password -s "$service" -a "$account" >/dev/null 2>&1
 }
 
+# read_secret_hex prints the stored secret as lowercase hex, and nothing for an
+# empty secret. `security -w` is not usable here: it prints a secret holding any
+# non-printable byte as bare hex with no marker, so rewriting its output would
+# replace the credential with the text of its own hex encoding. `-g` writes the
+# secret to stderr as `password: "text"` or `password: 0xHEX  "display"`.
+read_secret_hex() {
+  local service=$1 account=$2 output line value digits found=0
+  output=$(security find-generic-password -s "$service" -a "$account" -g 2>&1 >/dev/null) || return 1
+  while IFS= read -r line; do
+    if [[ "$line" == "password: "* ]]; then
+      found=1
+      break
+    fi
+  done <<<"$output"
+  ((found == 1)) || return 1
+  value=${line#password: }
+  case "$value" in
+    "")
+      ;;
+    0x*)
+      digits=${value#0x}
+      digits=${digits%%[[:space:]]*}
+      [[ "$digits" =~ ^[0-9A-Fa-f]+$ ]] && ((${#digits} % 2 == 0)) || return 1
+      printf '%s' "$digits" | tr 'A-F' 'a-f'
+      ;;
+    \"*\")
+      value=${value#\"}
+      value=${value%\"}
+      printf '%s' "$value" | to_hex
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 app_args_for() {
   local apps=$1 app path out=()
   for app in $apps; do
@@ -241,7 +250,7 @@ describe_apps() {
 
 repair_item() {
   local name=$1 service=$2 account=$3 apps=$4
-  local app_args=() app_arg_count secret hex label comment cmd
+  local app_args=() app_arg_count hex label comment cmd
 
   while IFS= read -r -d '' arg; do
     app_args+=("$arg")
@@ -263,11 +272,10 @@ repair_item() {
     return 0
   fi
 
-  if ! secret=$(security find-generic-password -s "$service" -a "$account" -w); then
+  if ! hex=$(read_secret_hex "$service" "$account"); then
     echo "ERROR $name ($service/$account): failed to read existing secret" >&2
     return 1
   fi
-  hex=$(printf '%s' "$secret" | to_hex)
   if [[ -z "$hex" ]]; then
     echo "ERROR $name ($service/$account): existing secret is empty; refusing to rewrite" >&2
     return 1
@@ -304,26 +312,60 @@ repair_item() {
   echo "REPAIRED $name ($service/$account)"
 }
 
-add_static_targets
-add_cr_targets
+main() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "This repair script is macOS-only." >&2
+    exit 1
+  fi
 
-echo "Mode: $([[ $apply == 1 ]] && echo apply || echo dry-run)"
-echo
-
-for line in "${target_lines[@]}"; do
-  IFS='|' read -r name service account apps <<<"$line"
-  repair_item "$name" "$service" "$account" "$apps"
-done
-
-if ((${#skip_lines[@]})); then
-  echo
-  echo "Notes:"
-  for line in "${skip_lines[@]}"; do
-    echo "- $line"
+  while (($#)); do
+    case "$1" in
+      --apply)
+        apply=1
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "unknown argument: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+    shift
   done
-fi
 
-if ((apply == 0)); then
+  if ! command -v security >/dev/null 2>&1; then
+    echo "missing required command: security" >&2
+    exit 1
+  fi
+
+  add_static_targets
+  add_cr_targets
+
+  echo "Mode: $([[ $apply == 1 ]] && echo apply || echo dry-run)"
   echo
-  echo "No changes made. Re-run with --apply to delete/recreate the found items."
+
+  for line in "${target_lines[@]}"; do
+    IFS='|' read -r name service account apps <<<"$line"
+    repair_item "$name" "$service" "$account" "$apps"
+  done
+
+  if ((${#skip_lines[@]})); then
+    echo
+    echo "Notes:"
+    for line in "${skip_lines[@]}"; do
+      echo "- $line"
+    done
+  fi
+
+  if ((apply == 0)); then
+    echo
+    echo "No changes made. Re-run with --apply to delete/recreate the found items."
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
 fi
