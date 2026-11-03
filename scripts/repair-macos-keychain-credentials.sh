@@ -364,9 +364,10 @@ main() {
   echo "Mode: $([[ $apply == 1 ]] && echo apply || echo dry-run)"
   echo
 
+  local failed=0
   for line in "${target_lines[@]}"; do
     IFS='|' read -r name service account apps <<<"$line"
-    repair_item "$name" "$service" "$account" "$apps"
+    repair_item "$name" "$service" "$account" "$apps" || failed=1
   done
 
   if ((${#skip_lines[@]})); then
@@ -380,6 +381,12 @@ main() {
   if ((apply == 0)); then
     echo
     echo "No changes made. Re-run with --apply to delete/recreate the found items."
+  fi
+
+  if ((failed)); then
+    echo >&2
+    echo "At least one item was not repaired; see the ERROR lines above." >&2
+    exit 1
   fi
 }
 

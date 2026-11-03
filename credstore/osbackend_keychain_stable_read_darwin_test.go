@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -78,7 +79,7 @@ func TestStableKeychainReadRoundTripsBytesThroughRealSecurity(t *testing.T) {
 // real keychain is touched and no dialog appears.
 func TestRepairScriptKeepsSecretBytes(t *testing.T) {
 	const service = "credstore-repair-probe"
-	keychain := filepath.Join(t.TempDir(), "probe.keychain-db")
+	keychain := filepath.Join(shortTempDir(t), "probe.keychain-db")
 	newThrowawayKeychain(t, keychain)
 
 	for _, tc := range []struct {
@@ -121,6 +122,28 @@ func TestRepairScriptKeepsSecretBytes(t *testing.T) {
 		}
 	})
 
+	t.Run("a refused item does not stop the batch", func(t *testing.T) {
+		tooLong := strings.Repeat("k", 3000)
+		addSecret(t, keychain, service, "batch too long", tooLong)
+		addSecret(t, keychain, service, "batch fits", "fits")
+		out, err := runRepairDriver(keychain, service, "", `
+add_static_targets() {
+  target_lines+=("too long|$PROBE_SERVICE|batch too long|/usr/bin/true" "fits|$PROBE_SERVICE|batch fits|/usr/bin/true")
+}
+add_cr_targets() { :; }
+main --apply
+`)
+		if err == nil || !bytes.Contains(out, []byte("too long to recreate")) || !bytes.Contains(out, []byte("REPAIRED fits")) || !bytes.Contains(out, []byte("not repaired")) {
+			t.Fatalf("main error = %v, want the refusal, the later repair and a failing exit:\n%s", err, out)
+		}
+		if got := readFromKeychain(t, keychain, service, "batch too long"); string(got) != tooLong {
+			t.Fatalf("refused item read %d bytes, want the original %d", len(got), len(tooLong))
+		}
+		if got := readFromKeychain(t, keychain, service, "batch fits"); string(got) != "fits" {
+			t.Fatalf("repaired item read %q", got)
+		}
+	})
+
 	t.Run("restores the value when the recreated item differs", func(t *testing.T) {
 		const secret = "original-value"
 		addSecret(t, keychain, service, "corrupted recreate", secret)
@@ -146,16 +169,21 @@ func TestRepairScriptKeepsSecretBytes(t *testing.T) {
 }
 
 func runRepairItem(keychain, service, account string, extraEnv ...string) ([]byte, error) {
-	const driver = `
+	return runRepairDriver(keychain, service, account, `repair_item probe "$PROBE_SERVICE" "$PROBE_ACCOUNT" /usr/bin/true`, extraEnv...)
+}
+
+// runRepairDriver sources the script with every `security` call scoped to one
+// keychain, then runs steps. security -i drops the end of an over-long line,
+// which would lose the keychain path and write to the user's default keychain,
+// so the driver stops any line that would exceed the limit with the path added.
+func runRepairDriver(keychain, service, account, steps string, extraEnv ...string) ([]byte, error) {
+	const prelude = `
 source "$REPAIR_SCRIPT"
-apply=1
-# security -i drops the end of an over-long line, which would lose the keychain
-# path and write to the user's default keychain, so such a line stops here.
 security() {
   if [[ "$1" == "-i" ]]; then
     local line
     IFS= read -r line
-    if ((${#line} > 4000)); then
+    if ((${#line} + ${#PROBE_KEYCHAIN} + 3 > 4000)); then
       echo "over-long line reached security -i" >&2
       exit 99
     fi
@@ -169,9 +197,10 @@ security() {
     command security "$@" "$PROBE_KEYCHAIN"
   fi
 }
-repair_item probe "$PROBE_SERVICE" "$PROBE_ACCOUNT" /usr/bin/true
+apply=1
 `
-	cmd := exec.Command("/bin/bash", "-c", driver)
+	// #nosec G204 -- fixed shell and test-owned driver text.
+	cmd := exec.Command("/bin/bash", "-c", prelude+steps)
 	cmd.Env = append(cmd.Environ(),
 		"REPAIR_SCRIPT=../scripts/repair-macos-keychain-credentials.sh",
 		"PROBE_KEYCHAIN="+keychain,
@@ -180,6 +209,18 @@ repair_item probe "$PROBE_SERVICE" "$PROBE_ACCOUNT" /usr/bin/true
 	)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	return cmd.CombinedOutput()
+}
+
+// shortTempDir keeps the keychain path short whatever TMPDIR is, because the
+// path counts toward the security -i line limit in runRepairDriver.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "credstore-")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 func newThrowawayKeychain(t *testing.T, keychain string) {
