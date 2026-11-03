@@ -76,23 +76,53 @@ using credstore's Keychain backend MUST gate the release on both.
 
 ## §2A macOS code-signing identity
 
-macOS Keychain "Always Allow" grants do **not** trust a file — they store a
-**designated requirement (DR)** in the Keychain item's ACL and re-check the calling
-binary against it on every access. An **ad-hoc-signed** binary (Go's linker
-ad-hoc-signs arm64; Homebrew ad-hoc-signs on install) has the DR `cdhash H"…"` — the
-literal content hash — so every `brew upgrade` produces a new hash, the DR no longer
-matches, and the user is re-prompted. Any CLI whose `keychain_probe` (§8) selects the
-macOS Keychain backend has this problem.
+macOS Keychain lets a binary read an item without a prompt only when two lists on
+the item both accept it:
 
-`credstore` reads Keychain secrets through the fixed, system-signed `/usr/bin/security` executable while retaining native writes and management. That reduces rebuild prompts for consumers that adopt this version of the library; release signing remains required for direct Keychain users and for other native accesses by a CLI. A newly trusted helper may require one grant per existing item. Normal CLI operation must not rewrite credentials with `security -i`; the dedicated [`repair-macos-keychain-credentials.sh`](../scripts/repair-macos-keychain-credentials.sh) script uses it only when repairing an existing item's ACL.
+- The **ACL** names trusted applications and stores each one's **designated
+  requirement (DR)**, re-checked against the calling binary on every access. An
+  **ad-hoc-signed** binary (Go's linker ad-hoc-signs arm64; Homebrew ad-hoc-signs on
+  install) has the DR `cdhash H"…"` — the literal content hash — so each build is a
+  different application.
+- The **partition list** names signing groups: `apple-tool:` for Apple's command-line
+  tools, `teamid:<id>` for a binary signed with a TeamIdentifier, and `cdhash:<hash>`
+  for a binary without one.
+
+"Always Allow" adds the caller to both lists. A stable DR alone therefore does not
+carry a grant across a rebuild: a binary without a TeamIdentifier, which includes
+every self-signed release, gets a partition entry for that exact build. The next
+release has a new hash and is not in the partition list, so a native read prompts
+again and Always Allow adds another entry. Any CLI whose `keychain_probe` (§8)
+selects the macOS Keychain backend has this problem.
+
+`credstore` avoids it by reading secrets through the fixed, system-signed
+`/usr/bin/security`, whose ACL entry and `apple-tool:` partition entry do not change
+when the CLI does. Metadata, enumeration, writes and deletion stay native.
+
+What a user of a consumer on this read path sees:
+
+- One prompt naming `security` for each item that does not trust it yet. Always Allow
+  covers that item from then on; plain Allow covers one read.
+- No prompts for reads across CLI upgrades after that.
+- The same one prompt again for an item a CLI creates natively, because a new item
+  does not trust `security`. Native writes and deletes of an existing item still run
+  as the CLI binary, so both lists apply to them.
+- A read left waiting on an unanswered prompt fails after 60 seconds with an error
+  that names the pending approval.
+
+Normal CLI operation must not rewrite credentials with `security -i`; the dedicated
+[`repair-macos-keychain-credentials.sh`](../scripts/repair-macos-keychain-credentials.sh)
+script uses it only when repairing an existing item's ACL.
 
 **Standard: sign every darwin binary at release time with the family's single
 self-signed code-signing cert and a constant per-tool identifier.** That makes the DR
 `identifier "org.open-cli-collective.<binary>" and certificate leaf = H"<cert hash>"`
-— no `cdhash` — so the grant survives rebuilds **as long as the cert and identifier
-never change.** No Apple Developer account, no notarization: Homebrew binaries aren't
-quarantined and we establish a local identity, not Gatekeeper trust — so `codesign`
-MUST omit `--timestamp` and `--options runtime`.
+— no `cdhash` — so the CLI's ACL entry keeps matching across rebuilds **as long as the
+cert and identifier never change.** The partition list is not covered by this; only
+reading through `security` removes the per-build prompt. No Apple Developer account,
+no notarization: Homebrew binaries aren't quarantined and we establish a local
+identity, not Gatekeeper trust — so `codesign` MUST omit `--timestamp` and
+`--options runtime`.
 
 **Invariants (unforgiving):**
 
