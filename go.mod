@@ -2,6 +2,8 @@ module github.com/open-cli-collective/cli-common
 
 go 1.26
 
+toolchain go1.27.4
+
 require (
 	github.com/byteness/go-libsecret v0.0.0-20260108215642-107379d3dee0
 	github.com/byteness/keyring v1.11.0
