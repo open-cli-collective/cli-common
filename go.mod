@@ -1,6 +1,6 @@
 module github.com/open-cli-collective/cli-common
 
-go 1.26
+go 1.27
 
 require (
 	github.com/byteness/go-libsecret v0.0.0-20260108215642-107379d3dee0

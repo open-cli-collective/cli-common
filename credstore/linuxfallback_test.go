@@ -29,7 +29,7 @@ func TestClassifySecretServiceErr(t *testing.T) {
 		{"bare ENOENT is NOT unavailable", errors.New("open /run/user/1000/bus: no such file or directory"), ssAmbiguous},
 		{"locked session-bus phrase stays ambiguous", errors.New("session bus is locked and requires authentication"), ssAmbiguous},
 		{"opaque error is ambiguous", errors.New("totally opaque"), ssAmbiguous},
-		{"wrapped typed error still classified", fmt.Errorf("probe failed: %w", &dbus.Error{Name: "org.freedesktop.Secret.Error.IsLocked"}), ssDenied},
+		{"wrapped typed error still classified", errors.Join(errors.New("probe failed"), &dbus.Error{Name: "org.freedesktop.Secret.Error.IsLocked"}), ssDenied},
 		// godbus returns dbus.Error by value at real call sites, so the
 		// value-type errors.As branch must classify too (not only the
 		// *dbus.Error pointer form).
